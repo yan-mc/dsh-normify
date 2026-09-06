@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build (tsc)
+        run: npm run build
+      - name: Sanity checks
+        run: |
+          node --check lib/index.js
+          node --check lib/tools.js
+          node -e "const fs=require('fs');const s=fs.readFileSync('skills/normify-gen/SKILL.md','utf8');if(!s.startsWith('---')||!/name:\\s*normify-gen/.test(s))throw new Error('SKILL.md frontmatter invalid');const v=fs.readFileSync('vendor/schemastery/lib/index.mjs','utf8');if(!v.includes('../../cosmokit/lib/index.js'))throw new Error('vendor patch missing');console.log('sanity ok')"

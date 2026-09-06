@@ -1,0 +1,6 @@
+node_modules/
+vendor-ts/
+.checkout
+*.tsbuildinfo
+*.tgz
+%SystemDrive%/
