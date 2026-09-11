@@ -1,5 +1,4 @@
 import type { Diagnostic, Module } from './types.js';
-export declare const MAX_DEPTH = 8;
 export declare function checkSourceEntry(v: unknown, where: string, out: Diagnostic[]): boolean;
 export declare function checkApiEntry(v: unknown, where: string, out: Diagnostic[]): boolean;
 export declare function checkDepEntry(v: unknown, where: string, out: Diagnostic[]): boolean;

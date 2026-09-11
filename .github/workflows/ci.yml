@@ -17,8 +17,14 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Build (tsc)
         run: npm run build
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests (engine + companion e2e)
+        run: npm test
+      - name: Bundle + tool-name contract
+        run: node ci-contract-check.cjs
       - name: Sanity checks
         run: |
           node --check lib/index.js
           node --check lib/tools.js
-          node -e "const fs=require('fs');const s=fs.readFileSync('skills/normify-gen/SKILL.md','utf8');if(!s.startsWith('---')||!/name:\\s*normify-gen/.test(s))throw new Error('SKILL.md frontmatter invalid');const v=fs.readFileSync('vendor/schemastery/lib/index.mjs','utf8');if(!v.includes('../../cosmokit/lib/index.js'))throw new Error('vendor patch missing');console.log('sanity ok')"
+          node -e "const fs=require('fs');const s=fs.readFileSync('skills/normify-gen/SKILL.md','utf8');if(!s.startsWith('---')||!/name:\s*normify-gen/.test(s))throw new Error('SKILL.md frontmatter invalid');const v=fs.readFileSync('vendor/schemastery/lib/index.mjs','utf8');if(!v.includes('../../cosmokit/lib/index.js'))throw new Error('vendor patch missing');console.log('sanity ok')"

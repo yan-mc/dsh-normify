@@ -2,6 +2,68 @@
 
 本项目的所有显著变更都记录在此文件中。版本遵循 [Semantic Versioning](https://semver.org/)。
 
+> **重建说明（2026-09-12）**：本源码仓在 0.1.0 之后只在本地演进，上游仓库仅有 0.1.0 提交。
+> 本次依据 0.4.1 发行产物（lib/ + .d.ts）、工作区测试记录（`test-results/2026-09-12-*`）与
+> 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
+
+
+## [0.4.1] - 2026-09-12
+
+### 修复
+
+- `normify_sync` 漏报未跟踪的新文件：`gitChangedFiles` 追加 `git ls-files --others --exclude-standard`，
+  新建但未 commit 的文件现在会出现在 `new_files` 并给出建议模块。
+
+### 变更
+
+- **渲染器 v3（最终）**
+  - 连线只走自由通道，节点框保持 ≥16px 净空（线不贴框）；候选路径做框体/组框碰撞检测（线不穿框）；
+  - 全局车道坐标注册表 + 按负载择路（线不压线）；外侧合成车道兜底；
+  - `viewBox` 由全部几何包围盒动态计算（线不出视口）；
+  - 叶子框内展示 API 明细行（最多 4 行 + `+N`），精确边按 `from_api/to_api` 锚定 API 行端口（API 直连）；
+  - 跨层依赖聚合为虚线 `×N`（默认隐藏，工具栏或 `?agg=1` 开启，悬停看明细）；缩放与悬停高亮。
+
+## [0.4.0] - 2026-09-12
+
+### 新增
+
+- **伴随开发**：`state`（active / planned / deprecated）+ `replacement` + `tags`；计划态先建树、实现后
+  `normify_module_refresh({ ids, activate: true })` 激活；源码未落地时禁止假激活。
+- **架构规则 policy.yml**：`forbid-dependency` / `dependency-direction` / `acyclic` / `max-depth` /
+  `cross-tree` / `naming` 六类规则，项目创建自动安装，`normify_validate` / `normify_build` / `normify_check` 强制执行；
+  `normify_policy_get` / `normify_policy_upsert` 管理。
+- **变更日志 changes/<id>.json**：`normify_change_open/update/list/close`；`close` 0 error 强制
+  （刷新指纹并激活 → validate → build → 标记 verified + `revision.after`）。
+- **编辑算子**：`normify_module_patch`（`expect_updated_at` 并发保护 + `dry_run`）、
+  `normify_module_batch`（原子，失败整批回滚）、`normify_module_move`（保 uid、级联 parent、重写全项目 `deps.to`、渲染数据随迁）。
+- **指引与预检**：`normify_brief`（目标模块/影响面/规则约束/验收清单）、`normify_check`（拟建模块与依赖预检）。
+- **sync v2**：脏子树 / 新增文件→建议模块 / 失效 source / API 增删与破坏性变更 / planned 进度与可激活清单。
+- 可选提醒钩子 `devCompanionReminder`（默认关）：连续写 N 个文件后提示同步结构树。
+- 工具数 15 → **30**。
+
+## [0.3.0] - 2026-09-12
+
+### 新增
+
+- **渲染数据集 `renders/`**：与容器模块一一对应的可读性数据（`order` / `groups` / `mode` / `reading` / `edge_hints`），
+  由 `normify_layout_get/upsert/delete` 维护，`normify_build` 编入 `tree.json.layouts`。
+- 渲染器按渲染数据绘制：语义分组框、阅读顺序、车道与边提示、边去重。
+
+### 变更
+
+- id 段数上限 8 → **12**；下钻粒度放开（按单一功能单元拆分，鼓励 100–1000+ 模块）。
+
+## [0.2.0] - 2026-09-12
+
+### 变更
+
+- 适配 DeepSeek Harness `0.1.5-rc.2` / DSHEAC AIO 桌面端。
+- 工具名 `normify.x.y` → **`normify_x_y`**（provider-safe：`^[a-zA-Z0-9_-]+$`）。
+- 新增 bundle 层 `cordis.patch.yml` 与 `package.json > dsh.bundle.patch`，改由 bundle 声明装载。
+- 工具 `parameters` 在交给模型前编译为**标准 JSON Schema**（属性内联 `required` 提升为对象级 `required`、
+  补 `additionalProperties: false`）；新增必填参数守卫与统一错误载荷。
+- 只读工具标记 `isConcurrencySafe`，可由 dsh 并发调度器并行调用。
+
 ## [0.1.0] - 2026-09-06
 
 ### 新增

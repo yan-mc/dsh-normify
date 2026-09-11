@@ -43,6 +43,11 @@ export declare function promoteModule(projectDir: string, id: string): Promise<{
     file: string;
     warnings: Diagnostic[];
 }>;
+/** 仓库当前 HEAD（40 位 SHA）。 */
+export declare function gitHead(repoRoot: string): {
+    sha: string | null;
+    error: string | null;
+};
 /** git 变更文件清单（增量再生成的输入）。 */
 export declare function gitChangedFiles(repoRoot: string, diffSpec: string): {
     files: string[] | null;

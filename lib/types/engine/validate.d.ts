@@ -1,4 +1,4 @@
-import type { Diagnostic, ModuleFile } from './types.js';
+import type { ChangeData, Diagnostic, LayoutData, ModuleFile, PolicyData } from './types.js';
 import { depthOf, deriveParent, treeOf } from './ids.js';
 export interface ValidateOptions {
     repoRoot?: string;
@@ -11,6 +11,9 @@ export interface ValidateOutput {
     files: ModuleFile[];
     childrenOf: Map<string, string[]>;
     byId: Map<string, ModuleFile>;
+    layouts: Map<string, LayoutData>;
+    policy: PolicyData | null;
+    changes: ChangeData[];
 }
 /** L2：全项目校验（规范 §5.2 规则全集）。零容忍：任何 error 阻断构建。 */
 export declare function validateProject(projectDir: string, opts: ValidateOptions): Promise<ValidateOutput>;

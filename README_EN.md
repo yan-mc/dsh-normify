@@ -1,3 +1,6 @@
+> **Note (reconstructed 2026-09-12):** this file still documents **v0.1.0** (14 tools).
+> The current release is **v0.4.1** (30 tools) — see `README.md` (Chinese) and `CHANGELOG.md`.
+
 <p align="center">
   <strong>English</strong> · <a href="./README.md">简体中文</a>
 </p>

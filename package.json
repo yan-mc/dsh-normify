@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-normify",
-  "version": "0.1.0",
-  "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（14 个工具 + normify-gen 技能）。",
+  "version": "0.4.1",
+  "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（30 个工具 + normify-gen 技能 + 渲染数据集 + 伴随开发）。适配 DeepSeek Harness 0.1.5+ / DSHEAC AIO 桌面端。",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -9,6 +9,7 @@
     "lib",
     "skills",
     "vendor",
+    "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
@@ -32,10 +33,26 @@
   },
   "homepage": "https://github.com/yan-mc/dsh-normify#readme",
   "engines": {
-    "node": ">=18"
+    "node": ">=18",
+    "dsh": ">=0.1.5-rc.2 <0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc <5"
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/dsh-tools": ">=0.1.5-rc.2 <0.2.0",
+    "@deepseek-ai/dsh-skill": ">=0.1.5-rc.2 <0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill": {
+      "optional": true
+    }
   },
   "dependencies": {
     "yaml": "^2.8.1"
@@ -50,6 +67,7 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs"
   }
 }
