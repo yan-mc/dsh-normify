@@ -373,7 +373,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
     return best
   }
 
-  var BOX = 200, GX = 170, GY = 170, MARGIN = 56, GPAD = 22, GTITLE = 24
+  var BOX = 200, GX = 220, GY = 220, MARGIN = 56, GPAD = 22, GTITLE = 24
 
   function orderedKids(kids, lay) {
     var kidSet = {}
@@ -657,6 +657,17 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
     var byId = {}
     nodes.forEach(function (n) { byId[n.id] = n })
     var rects = nodes.map(function (n) { return { x: n.x, y: n.y, w: n.w, h: n.h } })
+    var rectById = {}
+    nodes.forEach(function (n, i) { rectById[n.id] = rects[i] })
+    /** 线段是否穿入某节点框的"内部"（内缩 PAD：贴着端口的那一小段不算穿框）。 */
+    function segEntersRect(x1, y1, x2, y2, r) {
+      var PAD = 2
+      var rx = r.x + PAD, ry = r.y + PAD, rw = r.w - PAD * 2, rh = r.h - PAD * 2
+      if (rw <= 0 || rh <= 0) return false
+      if (Math.max(x1, x2) <= rx || Math.min(x1, x2) >= rx + rw) return false
+      if (Math.max(y1, y2) <= ry || Math.min(y1, y2) >= ry + rh) return false
+      return true
+    }
     var nodesById = {}
     nodes.forEach(function (n) { nodesById[n.id] = n })
     var maxY = 0
@@ -844,7 +855,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
     }
 
     var allEdges = aggEdges.concat(exactEdges)
-    var sideCount = {}, sideUsed = {}
+    var sideCount = {}, sideUsed = {}, apiPortCount = {}
     function sideOf(A, B) {
       var dx = B.cx - A.cx, dy = B.cy - A.cy
       var a, b
@@ -858,11 +869,25 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
       e.sides = sideOf(A, B)
       sideCount[e.from + e.sides[0]] = (sideCount[e.from + e.sides[0]] || 0) + 1
       sideCount[e.to + e.sides[1]] = (sideCount[e.to + e.sides[1]] || 0) + 1
+      // API 锚定的端口也要"端口分离"：同一个 API 行常被多条边共用，
+      // 若都钉在同一个点，最后一段必然共线重叠（线压线）。
+      if (e.from_api) { var k1 = e.from + e.sides[0] + '|api:' + e.from_api; apiPortCount[k1] = (apiPortCount[k1] || 0) + 1 }
+      if (e.to_api) { var k2 = e.to + e.sides[1] + '|api:' + e.to_api; apiPortCount[k2] = (apiPortCount[k2] || 0) + 1 }
     })
     function portOf(node, side, key, apiKey) {
-      if (apiKey) {
-        var ay = apiPortY(node, apiKey)
-        return { x: side === 'R' ? node.x + node.w : node.x, y: ay, side: side, api: true }
+      // API 锚点只在左右边有意义（API 行是横排的一行）。
+      // 上下边一律走"按边均匀分离"：否则同一节点不同 API 的边会各自取中点而重合。
+      if (apiKey && (side === 'L' || side === 'R')) {
+        // 同一 (节点, 侧, API 行) 上的多条边按到达顺序扇形分离：
+        // ① 左右边：±5.5px 仍落在该 API 行（行高 13px）内，视觉上依旧"钉在 API 行"，但不再共线；
+        // ② 上下边：API 行是"横排的一行"，纵向边上没有对应的行位置——退回按边均匀分离，
+        //    否则端口会被放到框内部，连线横穿自身框。
+        var fk = key + '|api:' + apiKey
+        sideUsed[fk] = (sideUsed[fk] || 0) + 1
+        var ftotal = apiPortCount[fk] || 1
+        var ffrac = sideUsed[fk] / (ftotal + 1)
+        var foff = (ffrac - 0.5) * 11
+        return { x: side === 'R' ? node.x + node.w : node.x, y: apiPortY(node, apiKey) + foff, side: side, api: true }
       }
       sideUsed[key] = (sideUsed[key] || 0) + 1
       var total = sideCount[key] || 1
@@ -1113,21 +1138,43 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
         }
       }
       var ordered = cands2.concat(cands)
+      // 首选：任何一项违规都为 0 的候选（不穿别的框、不压已画的线、不横穿自己的框、端口法向正确）。
+      // 旧实现只判 pathClear（不穿别人的框）就返回，于是"第一条不撞框的路径"可能是压着别的线走的。
       for (var oi = 0; oi < ordered.length; oi++) {
         var opts = clean(ordered[oi])
-        var okp = pathClear(opts, e.from, e.to)
-        if (okp) return { pts: opts, hint: hint, fallback: e.agg }
+        if (pathClear(opts, e.from, e.to) && violations(opts) === 0) return { pts: opts, hint: hint, fallback: e.agg }
       }
+      // 次选：没有完全干净的路径时，取违规最少的一条
+      var bestV1 = Infinity, bestPts1 = null
+      for (var oj = 0; oj < ordered.length; oj++) {
+        var opj = clean(ordered[oj])
+        if (!pathClear(opj, e.from, e.to)) continue
+        var vj = violations(opj)
+        if (vj < bestV1) { bestV1 = vj; bestPts1 = opj }
+      }
+      if (bestPts1 !== null) return { pts: bestPts1, hint: hint, fallback: true }
       function violations(pts) {
         var v = 0
+        // 端口法向：T/B 端口的首段必须是竖直的，L/R 端口必须是水平的；
+        // 否则线会沿着节点自己的边滑行，多条边叠在同一条边线上（线压线）。
+        if (pts.length >= 2) {
+          var f = pts[1]
+          if ((pa.side === 'T' || pa.side === 'B') ? Math.abs(f.y - pa.y) < 0.6 : Math.abs(f.x - pa.x) < 0.6) v += 6
+          var l = pts[pts.length - 2]
+          if ((pb.side === 'T' || pb.side === 'B') ? Math.abs(l.y - pb.y) < 0.6 : Math.abs(l.x - pb.x) < 0.6) v += 6
+        }
         for (var si = 0; si < pts.length - 1; si++) {
           for (var ri = 0; ri < rects.length; ri++) {
             var rn = nodes[ri]
             if (rn.id === e.from || rn.id === e.to) continue
-            if (!segClear(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y, e.from, e.to)) v++
+            if (!segClear(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y, e.from, e.to)) v += 8
           }
           if (segHugsGroup(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y)) v += 2
           if (segOverlapsUsed(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y)) v += 3
+          // 端点框：segClear 会整块跳过源/目标框，若不额外检查，连线可以横穿自己的框
+          var rA = rectById[e.from], rB = rectById[e.to]
+          if (rA && segEntersRect(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y, rA)) v += 4
+          if (rB && segEntersRect(pts[si].x, pts[si].y, pts[si + 1].x, pts[si + 1].y, rB)) v += 4
         }
         return v
       }
