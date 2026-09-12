@@ -13,7 +13,7 @@ import { isValidId, splitId } from './ids.js';
  *   demo.order.checkout → renders/demo/order/checkout.json
  * 叶子模块没有渲染图，因此没有渲染数据文件。
  */
-const LAYOUT_KEYS = ['schema_version', 'id', 'updated_at', 'mode', 'max_columns', 'reading', 'order', 'groups', 'edge_hints'];
+const LAYOUT_KEYS = ['schema_version', 'id', 'updated_at', 'mode', 'max_columns', 'max_api_rows', 'reading', 'order', 'groups', 'edge_hints'];
 const GROUP_KEYS = ['id', 'title', 'children'];
 const HINT_KEYS = ['from', 'to', 'kind', 'lane', 'style', 'bundle', 'priority'];
 type LayoutMode = (typeof LAYOUT_MODES)[number];
@@ -148,6 +148,11 @@ export function l1ValidateLayout(data: unknown, id: string, children: string[], 
     if (data.max_columns !== undefined) {
         if (!Number.isInteger(data.max_columns) || (data.max_columns as number) < 1 || (data.max_columns as number) > 6) {
             errors.push(diag('error', 'layout/max-columns', 'max_columns 必须为 1..6 的整数', { module: id }, { value: data.max_columns }, ['改为 1..6']));
+        }
+    }
+    if (data.max_api_rows !== undefined) {
+        if (!Number.isInteger(data.max_api_rows) || (data.max_api_rows as number) < 0 || (data.max_api_rows as number) > 48) {
+            errors.push(diag('error', 'layout/max-api-rows', 'max_api_rows 必须为 0..48 的整数（0 = 全部展开）', { module: id }, { value: data.max_api_rows }, ['改为 0..48']));
         }
     }
     let reading: LocalizedText | undefined;
@@ -321,6 +326,7 @@ export function l1ValidateLayout(data: unknown, id: string, children: string[], 
         updated_at: String(data.updated_at),
         ...(mode !== undefined ? { mode } : {}),
         ...(data.max_columns !== undefined ? { max_columns: data.max_columns as number } : {}),
+        ...(data.max_api_rows !== undefined ? { max_api_rows: data.max_api_rows as number } : {}),
         ...(reading !== undefined ? { reading } : {}),
         ...(order !== undefined ? { order } : {}),
         ...(groups !== undefined ? { groups } : {}),
@@ -339,6 +345,8 @@ export function serializeLayout(layout: LayoutData): string {
         out.mode = layout.mode;
     if (layout.max_columns !== undefined)
         out.max_columns = layout.max_columns;
+    if (layout.max_api_rows !== undefined)
+        out.max_api_rows = layout.max_api_rows;
     if (layout.reading !== undefined)
         out.reading = layout.reading;
     if (layout.order !== undefined)

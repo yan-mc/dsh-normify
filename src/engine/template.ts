@@ -470,12 +470,15 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
     return layer
   }
 
-  /** 叶子模块展示的 API 行（最多 4 行；容器不展示）。 */
+  /** 叶子框内最多展示几行 API：由该层渲染数据的 max_api_rows 控制（0 = 全部），缺省 6。 */
+  var MAX_API_ROWS = 6
+
+  /** 叶子模块展示的 API 行（容器不展示）。 */
   function apiRows(id) {
     var m = mods[id]
     if (m === undefined || children[id] !== undefined) return []
     var apis = m.apis || []
-    return apis.slice(0, 4)
+    return MAX_API_ROWS > 0 ? apis.slice(0, MAX_API_ROWS) : apis
   }
 
   function apiRowCount(id) { return apiRows(id).length }
@@ -578,6 +581,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
 
   function renderDiagram(main, m, kids) {
     var lay = (DATA.layouts || {})[m.id] || null
+    MAX_API_ROWS = (lay && typeof lay.max_api_rows === 'number') ? Math.max(0, Math.min(48, lay.max_api_rows)) : 6
     if (lay && lay.reading) {
       var rb = el('div', 'reading')
       rb.innerHTML = '<b>' + esc(lang === 'zh' ? '阅读导语' : 'Reading guide') + '</b> ' + esc(L(lay.reading))

@@ -26,7 +26,7 @@ export function apply(ctx: Context, config: Config): void {
     registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual });
     installCompanionReminder(ctx, config);
     const skillRegistered = registerSkill(ctx);
-    const message = '[normify] dsh-normify 0.4.1 已加载：30 个 normify_* 工具' +
+    const message = '[normify] dsh-normify 0.5.0 已加载：30 个 normify_* 工具' +
         (skillRegistered ? ' + normify-gen 技能（rootDir=' + config.rootDir + '）' : '（技能未注册）');
     ctx.logger?.info?.(message);
     console.log(message);

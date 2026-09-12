@@ -1,7 +1,7 @@
 import { parse as yamlParse, YAMLParseError } from 'yaml';
 import { DEP_KINDS, MODULE_STATES, PROTOCOLS } from './types.js';
 import type { Api, Dep, Diagnostic, LocalizedText, Module, ModuleState, SourceRef } from './types.js';
-import { deriveParent, isValidId, MAX_DEPTH } from './ids.js';
+import { deriveParent, isValidId } from './ids.js';
 import { diag } from './diag.js';
 const TOP_KEYS = ['uid', 'id', 'parent', 'name', 'description', 'source', 'revision', 'updated_at', 'fingerprint', 'repository', 'state', 'replacement', 'tags', 'apis', 'deps'];
 const SOURCE_KEYS = ['path', 'line', 'end_line'];
@@ -155,7 +155,7 @@ export function l1Validate(data: unknown, where: string): {
     }
     const id = data.id;
     if (typeof id !== 'string' || !isValidId(id)) {
-        errors.push(diag('error', 'structure/id-format', 'id 段格式必须为 [a-z0-9][a-z0-9-]*，点分隔，含树名段 ≤ ' + MAX_DEPTH + ' 段', { path: where + '/id' }, { value: id }, ['修正 id，如 demo.order.checkout.payment']));
+        errors.push(diag('error', 'structure/id-format', 'id 段格式必须为 [a-z0-9][a-z0-9-]*，点分隔（深度不设上限）', { path: where + '/id' }, { value: id }, ['修正 id，如 demo.order.checkout.payment']));
     }
     const parent = data.parent;
     if (parent !== null && typeof parent !== 'string') {
@@ -421,7 +421,7 @@ export function fieldReference(): string {
     const proto = PROTOCOLS.join(' | ');
     const kinds = DEP_KINDS.join(' | ');
     return [
-        '模块字段（必填）: uid(8位hex) id(路径式,≤" + MAX_DEPTH + "段) parent(id去尾段|根为null) name{zh,en} description{zh,en} source[{path,line?,end_line?}] revision(40位SHA) updated_at(ISO) fingerprint(hex)',
+        '模块字段（必填）: uid(8位hex) id(路径式,深度不限) parent(id去尾段|根为null) name{zh,en} description{zh,en} source[{path,line?,end_line?}] revision(40位SHA) updated_at(ISO) fingerprint(hex)',
         '可选: repository(仅根,http(s)URL) state(active|planned|deprecated) replacement(仅deprecated) tags[] apis(仅叶子) deps(出向箭头)',
         'plan-first: 计划态模块 state=planned + fingerprint=pending，允许 source 尚未落地；实现完成后用 normify_module_refresh(ids, activate=true) 激活',
         'apis 条目: protocol(' + proto + ') method(仅http,大写) path description{zh,en}',

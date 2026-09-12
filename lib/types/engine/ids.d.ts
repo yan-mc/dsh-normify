@@ -1,5 +1,4 @@
 import type { Api } from './types.js';
-export declare const MAX_DEPTH = 12;
 export declare function splitId(id: string): string[] | null;
 export declare function isValidId(id: string): boolean;
 /** 父 id = 去掉最后一段；单段（树名/根）的父为 null。 */

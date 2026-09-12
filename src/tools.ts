@@ -127,6 +127,7 @@ interface LayoutUpsertArgs extends ProjectArgs {
     id: string;
     mode?: LayoutData['mode'];
     max_columns?: number;
+    max_api_rows?: number;
     reading?: LocalizedText;
     order?: string[];
     groups?: LayoutGroup[];
@@ -1015,6 +1016,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             id: str('容器模块 id（必须已有 ≥1 个子模块）'),
             mode: strOpt('auto | layers | groups | grid（默认 auto：有分组用 groups，兄弟边多用 layers，否则 grid）'),
             max_columns: numOpt('最大列数 1..6（grid / layers 模式）'),
+            max_api_rows: numOpt('叶子框内最多展示几行 API（0 = 全部；缺省 6）'),
             reading: l10nOptParam('本层阅读导语（可选，显示在图上方，说明阅读顺序与分组逻辑）'),
             order: strArrayOpt('子模块阅读顺序（建议覆盖全部直接子模块；未列出的自动追加）'),
             groups: layoutGroupParam(),
@@ -1045,6 +1047,8 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             data.mode = args.mode;
         if (args.max_columns !== undefined)
             data.max_columns = args.max_columns;
+        if (args.max_api_rows !== undefined)
+            data.max_api_rows = args.max_api_rows;
         if (args.reading !== undefined)
             data.reading = { ...args.reading };
         if (Array.isArray(args.order))

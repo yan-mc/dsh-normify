@@ -178,6 +178,8 @@ export interface LayoutData {
   updated_at: string
   mode?: (typeof LAYOUT_MODES)[number]
   max_columns?: number
+  /** 叶子框内最多展示几行 API（0 = 全部展开；缺省 6）。项目越精细、每叶 API 越少，这一层越不需要截断。 */
+  max_api_rows?: number
   reading?: LocalizedText
   order?: string[]
   groups?: LayoutGroup[]
