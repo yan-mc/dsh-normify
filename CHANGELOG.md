@@ -7,6 +7,42 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.5.2] - 2026-09-12
+
+### 修复（三处会写坏数据的真实缺陷）
+
+1. **`normify_module_upsert` 必填表丢失**（工具契约）
+   `moduleParams()` 返回的是**已编译**的 JSON Schema，被 `params({ frontmatter: moduleParams() })` 再编译一次时，
+   内层的对象级 `required: [...]` 被整段丢掉 → `normify_module_upsert.parameters.required === undefined`，
+   `frontmatter` 的 9 个必填字段在模型侧与运行时校验里全部消失（空参调用不会被拦截）。
+   修复：`moduleParams()` 改为返回**作者态** schema（`required: true` 内联），由外层 `params()` 统一编译；
+   `toJsonSchema()` 同时改为**幂等**（保留并合并对象级 `required` 数组），嵌套复用不再丢约束。
+   **实测**：`required = ["frontmatter"]`，`frontmatter.required` 9 项齐全，空参调用返回 `args/missing`。
+
+2. **`normify_module_move` 迁移渲染数据只搬文件、不重写内容**
+   迁移时按字节复制 `renders/*.json`，`id` / `order` / `groups.children` / `edge_hints` 仍停留在旧 id 世界；
+   旧父级的 `order` 也仍指向已迁出的子模块 → move 之后 `normify_validate` 立刻报
+   `layout/id-mismatch`、`layout/order-child`、`layout/group-child`、`layout/groups-empty`、`layout/hint-endpoint`。
+   修复：迁移时用新 id 重写全部渲染数据字段（并按新子模块集合过滤），**旧父级**去掉已迁出子模块的引用
+   （`order` / `groups` / `edge_hints`，空组与空字段整体删除、`mode: groups` 无组时一并摘除），
+   **新父级**把新 id 补进 `order`；`dry_run` 的 `detail.layout_rewrites` 会列出这些原地重写。
+   渲染数据本身解析失败时按原样搬运并回报 `layout/unparsed-carried` 警告（不再静默）。
+   **实测**（回归用例）：move 前 0 error → 修复前 move 后 8–9 error → 修复后 0 error。
+
+3. **叶子晋升为容器时 API 留在容器上**
+   `writeModuleFile()` 的父级自动晋升、`promoteModule()` 的显式晋升都只是把 `x.md` 改成 `x/index.md`，
+   不清理父模块 frontmatter 里的 `apis` → 晋升后项目必然卡在 `api/non-leaf`（容器不允许声明 API）。
+   修复：两条晋升路径都会摘掉容器上的 `apis`（无 API 时仍走原来的"改名即晋升"，字节不变），
+   并回报 `structure/api-dropped-on-promote` 警告，附**丢失的 API 键清单**与修复建议（写回合适的叶子）；
+   `normify_module_upsert` / `normify_module_promote` / `move` / `batch` / `patch` / `refresh` 都会把该警告带回。
+
+### 变更
+
+- **API 默认全展开**：渲染数据 `max_api_rows` 缺省改为 **0（全部展开）**；修复前缺省为 6（超出折叠成 `+N`）。
+  需要收窄时显式写 1..48。渲染数据不写该字段 = 全展开，既有数据集无需改动即按新默认渲染。
+- 新增 `tests/regression-0.5.2.mjs`（34 项断言）锁定以上三处缺陷；`tests/companion-e2e.mjs` 中"记录 0.4.1 缺陷"
+  的断言反转为"必须重写内容，且 move 后 L2 = 0 error"。
+
 ## [0.5.1] - 2026-09-12
 
 ### 修复（渲染器：消除"线互相重叠/线压线"）

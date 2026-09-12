@@ -12,6 +12,7 @@ import { loadPolicyFile, writePolicyFile, l1ValidatePolicy } from '../lib/engine
 import { loadChangeFile, writeChangeFile } from '../lib/engine/changes.js'
 import { closeChange } from '../lib/engine/companion.js'
 import { writeLayoutFile } from '../lib/engine/layout.js'
+import { validateProject } from '../lib/engine/validate.js'
 
 const work = mkdtempSync(join(tmpdir(), 'normify-companion-e2e-'))
 const repo = join(work, 'demo-repo')
@@ -108,12 +109,14 @@ async function main() {
   assert(ids.includes('demo-repo.platform') && ids.includes('demo-repo.platform.consumer'), 'move 后 id 应级联: ' + ids.join(','))
   assert(existsSync(join(projectDir, 'renders', 'demo-repo', 'platform.json')), '渲染数据应随 move 迁移')
   assert(!existsSync(join(projectDir, 'renders', 'demo-repo', 'core.json')), '旧渲染数据应被移除')
-  // 已知缺陷（0.4.1）：move 迁移渲染数据只搬文件、不重写内容（id / order 里的旧 id 仍是旧值），
-  // 会让随后的 validate 报 layout/id-mismatch + layout/order-child。这里按真实行为补一次重写。
-  const migratedId = JSON.parse(readFileSync(join(projectDir, 'renders', 'demo-repo', 'platform.json'), 'utf8')).id
-  assert(migratedId === 'demo-repo.core', '记录 0.4.1 缺陷：迁移后的渲染数据 id 未重写（实际=' + migratedId + '）')
-  await writeLayoutFile(projectDir, { schema_version: 1, id: 'demo-repo.platform', updated_at: now(), order: ['demo-repo.platform.consumer'] })
-  console.log('move OK：id 级联 + 渲染数据随迁（并记录：0.4.1 迁移不重写渲染数据内容）')
+  // 0.5.2 修复：move 迁移渲染数据时必须把 id / order / groups / edge_hints 一并改写到新 id，
+  // 否则随后 validate 会报 layout/id-mismatch + layout/order-child（旧世界残留）。
+  const migrated = JSON.parse(readFileSync(join(projectDir, 'renders', 'demo-repo', 'platform.json'), 'utf8'))
+  assert(migrated.id === 'demo-repo.platform', 'move 后渲染数据 id 应重写为新 id（实际=' + migrated.id + '）')
+  assert(JSON.stringify(migrated.order) === JSON.stringify(['demo-repo.platform.consumer']), 'move 后渲染数据 order 应重写为新 id（实际=' + JSON.stringify(migrated.order) + '）')
+  const postMove = await validateProject(projectDir, {})
+  assert((postMove.errors ?? []).length === 0, 'move 后 L2 应 0 error（实际=' + JSON.stringify((postMove.errors ?? []).slice(0, 3)) + '）')
+  console.log('move OK：id 级联 + 渲染数据随迁并重写内容（0.5.2 修复），move 后 L2 = 0 error')
 
   step('6. refresh：planned → active')
   const rf = await refreshModules(projectDir, { ids: ['demo-repo.platform.consumer'], activate: true, repoRoot: repo })

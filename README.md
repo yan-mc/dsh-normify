@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.1-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.2-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
@@ -105,10 +105,24 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 3. 最新变化
 
-### v0.5.1 · 渲染器防重叠（当前版本）
+### v0.5.2 · 修掉三处会写坏数据的真实缺陷（当前版本）
 
-- **修复连线共线重叠**："线压线"从 28 层合计 **12 处 → 0 处**。四处根因：
-  ① 首选路由只判"不穿别人的框"，从不检查是否压到已画的线 → 改为 `violations === 0` 才接受；
+- **`normify_module_upsert` 的必填表不再丢失**：`parameters.required` 恢复为 `["frontmatter"]`，
+  `frontmatter` 的 9 个必填字段（uid / id / parent / name / description / source / revision / updated_at / fingerprint）
+  也重新出现在 schema 里。此前嵌套 schema 被二次编译，必填表被整段丢掉 —— 模型看到的约束与运行时实际校验不一致。
+- **`normify_module_move` 迁移渲染数据时重写内容**：`id` / `order` / `groups.children` / `edge_hints` 全部改写到新 id，
+  并同步维护**旧父级**（删掉已迁出子模块的引用）与**新父级**（把新 id 补进 `order`）。
+  修复前：move 完之后项目立刻被 L2 判为 `layout/id-mismatch` + `layout/order-child` 等（实测 8–9 个 error，0.5.2 后为 0）。
+- **晋升为容器时不再把 API 留在容器上**：叶子被晋升（显式 `normify_module_promote`、写子模块自动晋升、move 到叶子底下）
+  时，容器上残留的 `apis` 会被摘除，并回报 `structure/api-dropped-on-promote` 警告（附丢失的 API 键清单）——
+  修复前项目会直接卡在 `api/non-leaf`。
+- **API 默认全展开**：渲染数据字段 `max_api_rows` 缺省 **0 = 全部展开**，叶子上的 API 一行不折叠；需要收窄时显式写 1..48。
+- 三处缺陷各自配了回归断言：`tests/regression-0.5.2.mjs`（34 项，全绿）。
+
+### v0.5.1 · 渲染器防重叠（线压线 12 → 0）
+
+- **修复连线共线重叠**：28 层合计 **12 处 → 0 处**。四处根因：
+  ① 首选路由只判"不穿别人的框"，从不检查是否压到已画的线 → 改为只接受 `violations === 0` 的候选；
   ② API 锚定端口没有端口分离（同一 API 行被多条边共用） → 行内 ±5.5px 扇形分离；
   ③ API 端口落在上下边时被放进框内部 → 上下边退回按边均匀分离；
   ④ `segClear` 整块跳过源/目标框 → 新增"进入自身框内部"检查（内缩 2px）。
@@ -118,9 +132,7 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 - **删除 `MAX_DEPTH = 12`** 硬限制：树可以一直下钻到"单一功能单元"；需要限层时用 `policy.yml` 的
   `max-depth` 规则显式声明（`maxDepth` 放宽到 1..64）。
-- **API 行数可配**：渲染数据新增 `max_api_rows`（0 = 全部展开，1..48，缺省 6），叶子的 API 不再被硬截断。
 - SKILL：目标深度改为"不设上限"，单批上限 40 → 200，新增"每叶 API 尽量 3–5 条"的粒度指引。
-
 <details>
 <summary>更早的版本（v0.4.x / v0.3 / v0.2 / v0.1）</summary>
 
@@ -301,7 +313,7 @@ deps:                         # 出向箭头（只存源端）；可跨树
   "updated_at": "2026-09-12T12:00:00Z",
   "mode": "grid",              // auto | layers | groups | grid
   "max_columns": 3,            // 1..6
-  "max_api_rows": 6,           // 0 = 全部展开；1..48；缺省 6
+  "max_api_rows": 0,           // 0 = 全部展开（缺省）；1..48 = 截断到该行数
   "reading": {"zh": "本层 8 个子模块…", "en": "…"},
   "order": ["dsh-normify.engine.model.text", "…"],
   "groups": [{"id": "model", "title": {"zh": "模型与契约", "en": "Model"}, "children": ["…"]}],
@@ -369,13 +381,14 @@ rules:
 > 实测（本项目自身）：改完 `src/engine/layout.ts` + `CHANGELOG.md` 后，`sync` 报出 **7 个 `evidence/fingerprint-drift`**，
 > `refresh` 后回到 0 error —— 这正是"图与码不脱节"的日常形态。
 
-## 12. 渲染器细节（v3 / 0.5.1）
+## 12. 渲染器细节（v3 / 0.5.2）
 
 - **走线**：连线只走"自由通道"（相邻列/行之间的空隙），节点框保持 ≥16px 净空；全局车道坐标注册表保证
   **同一坐标不分配给两条边**；候选路径做框体/组框碰撞检测，兜底用"自由行 × 自由列"总线。
 - **防重叠（0.5.1）**：路由首选只接受 `violations === 0` 的候选（不穿框 / 不压已画线 / 不横穿自身框 /
   端口法向正确）；API 锚定端口按到达顺序在 API 行内 ±5.5px 扇形分离。
-- **API 直连**：叶子框内最多展示 `max_api_rows` 行 API（0 = 全部），箭头锚定到具体 API 行的端口。
+- **全展开（0.5.2）**：`max_api_rows` 缺省 0 → 每个叶子的 API 全部展开，箭头锚点与 API 行一一对应（不再 `+N` 折叠）。
+- **API 直连**：叶子框内展示 `max_api_rows` 行 API（0 = 全部，也是缺省），箭头锚定到具体 API 行的端口。
 - **跨层聚合**：跨层依赖默认聚合为虚线 `×N`（`?agg=1` 或工具栏开启，悬停看明细）。
 - **viewBox 自适应**：由全部几何包围盒动态计算（线不出视口）；缩放 / 适配 / 100%。
 - **几何自检**：`check-geometry.mjs` 逐层断言五项指标（越界 / 贴边 / 穿框 / 贴组框 / 线压线）。
@@ -430,7 +443,7 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 30 个工�
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.1） |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.2） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略 |
 

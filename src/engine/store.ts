@@ -142,10 +142,23 @@ export function isContainer(module: Module, all: Module[]): boolean {
     return all.some(m => m.parent === module.id);
 }
 /** 写入模块文件；自动晋升父模块（leaf 文件 → index.md）。 */
+/** 晋升为容器时 API 必须下放到叶子：摘掉容器上的 apis，并给出丢失的 API 键清单。 */
+function stripApisForContainer(file: ModuleFile): { module: Module; dropped: string[] } {
+    const dropped = (file.module.apis ?? []).map(a => a.protocol + ':' + a.path);
+    if (dropped.length === 0)
+        return { module: file.module, dropped };
+    const next: Module = { ...file.module, updated_at: new Date().toISOString() };
+    delete next.apis;
+    return { module: next, dropped };
+}
+function apiDropWarning(id: string, rel: string, dropped: string[]): Diagnostic {
+    return diag('warning', 'structure/api-dropped-on-promote', '模块晋升为容器（' + id + '）：容器不允许声明 API，已从容器上摘除 ' + dropped.join('、'), { module: id }, { file: rel, dropped_apis: dropped }, ['把这些 API 写到合适的叶子子模块的 apis 字段上']);
+}
 export async function writeModuleFile(projectDir: string, module: Module, body: string): Promise<{ file: string; promoted: string[]; warnings: Diagnostic[] }> {
     const promoted: string[] = [];
     const warnings: Diagnostic[] = [];
-    const all = (await loadAllModules(projectDir)).files.map(f => f.module);
+    const loaded = await loadAllModules(projectDir);
+    const all = loaded.files.map(f => f.module);
     const container = isContainer(module, all);
     const target = moduleFilePath(projectDir, module.id, container);
     const existing = findModuleFile(projectDir, module.id);
@@ -161,7 +174,17 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
         if (existsSync(parentLeaf)) {
             const parentContainer = moduleFilePath(projectDir, parentId, true);
             await mkdir(dirname(parentContainer), { recursive: true });
-            await rename(parentLeaf, parentContainer);
+            const parentFile = loaded.files.find(f => f.module.id === parentId);
+            const stripped = parentFile !== undefined ? stripApisForContainer(parentFile) : null;
+            if (parentFile === undefined || stripped === null || stripped.dropped.length === 0) {
+                // 无 API 需要摘除：保持原有的"改名即晋升"（字节不变）
+                await rename(parentLeaf, parentContainer);
+            }
+            else {
+                await writeFile(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''), 'utf8');
+                await rm(parentLeaf, { force: true });
+                warnings.push(apiDropWarning(parentId, relative(projectDir, parentContainer).replace(/\\/g, '/'), stripped.dropped));
+            }
             promoted.push(parentId);
         }
     }
@@ -242,15 +265,25 @@ export async function promoteModule(projectDir: string, id: string): Promise<{ f
     const warnings: Diagnostic[] = [];
     const container = moduleFilePath(projectDir, id, true);
     const leaf = moduleFilePath(projectDir, id, false);
+    const rel = relative(projectDir, container).replace(/\\/g, '/');
     if (existsSync(container)) {
-        return { file: relative(projectDir, container).replace(/\\/g, '/'), warnings };
+        return { file: rel, warnings };
     }
     if (!existsSync(leaf)) {
         throw new NormifyError('module/not-found', '模块不存在：' + id);
     }
     await mkdir(dirname(container), { recursive: true });
-    await rename(leaf, container);
-    return { file: relative(projectDir, container).replace(/\\/g, '/'), warnings };
+    const file = (await loadAllModules(projectDir)).files.find(f => f.module.id === id);
+    const stripped = file !== undefined ? stripApisForContainer(file) : null;
+    if (file === undefined || stripped === null || stripped.dropped.length === 0) {
+        await rename(leaf, container);
+        return { file: rel, warnings };
+    }
+    // 容器不允许声明 API：晋升时摘下并回报丢失清单（否则 L2 立刻 api/non-leaf）
+    await writeFile(container, serializeModule(stripped.module, file.body ?? ''), 'utf8');
+    await rm(leaf, { force: true });
+    warnings.push(apiDropWarning(id, rel, stripped.dropped));
+    return { file: rel, warnings };
 }
 /** 仓库当前 HEAD（40 位 SHA）。 */
 export function gitHead(repoRoot: string): { sha: string | null; error: string | null } {

@@ -26,7 +26,6 @@ export declare function loadAllModules(projectDir: string): Promise<{
 }>;
 /** 判断某模块当前是否为容器（有子模块或是根）。 */
 export declare function isContainer(module: Module, all: Module[]): boolean;
-/** 写入模块文件；自动晋升父模块（leaf 文件 → index.md）。 */
 export declare function writeModuleFile(projectDir: string, module: Module, body: string): Promise<{
     file: string;
     promoted: string[];

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.1-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.2-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
@@ -111,7 +111,23 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 ## 3. Release highlights
 
-### v0.5.1 — renderer: no more overlapping lines (current)
+### v0.5.2 — three real data-corrupting defects fixed (current)
+
+- **`normify_module_upsert` keeps its required list**: `parameters.required` is `["frontmatter"]` again, and the 9
+  mandatory frontmatter fields (uid / id / parent / name / description / source / revision / updated_at / fingerprint)
+  are back in the schema. A nested schema was compiled twice, which silently dropped the whole required list, so the
+  contract the model saw no longer matched what the runtime enforced.
+- **`normify_module_move` rewrites migrated render data**: `id` / `order` / `groups.children` / `edge_hints` are all
+  remapped to the new ids, plus the **old parent** (drops references to moved-out children) and the **new parent**
+  (appends the new id to `order`) are maintained. Before the fix a move left the project failing L2 with
+  `layout/id-mismatch` + `layout/order-child` (8–9 errors measured; 0 after 0.5.2).
+- **Promotion hands APIs off**: when a leaf becomes a container (explicit `normify_module_promote`, auto-promotion when
+  writing a child, or moving a subtree under a leaf) the stale `apis` are stripped from the container and reported as a
+  `structure/api-dropped-on-promote` warning listing the dropped keys — previously the project hard-failed with `api/non-leaf`.
+- **All API rows by default**: layout field `max_api_rows` defaults to **0 = expand all**; pass 1..48 to truncate.
+- Each defect is locked in by `tests/regression-0.5.2.mjs` (34 assertions, all green).
+
+### v0.5.1 — renderer: no more overlapping lines (12 → 0)
 
 - **Fixed collinear line overlap**: from **12 overlaps across 28 levels → 0**. Four root causes:
   1. the primary router accepted the first candidate that merely did not cross *other* boxes — it never checked
@@ -125,9 +141,7 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 - **Removed the hard `MAX_DEPTH = 12` limit**: drill down to single functional units; if a project really wants a depth
   limit, declare it in `policy.yml` (`maxDepth` widened to 1..64, scoped).
-- **Configurable API rows**: new layout field `max_api_rows` (0 = expand all, 1..48, default 6).
 - Skill guidance: unlimited depth, batch limit 40 → 200, "keep 3–5 APIs per leaf".
-
 <details>
 <summary>Earlier versions (v0.4.x / v0.3 / v0.2 / v0.1)</summary>
 
@@ -311,7 +325,7 @@ One per **container** module, mirroring the module tree:
   "updated_at": "2026-09-12T12:00:00Z",
   "mode": "grid",              // auto | layers | groups | grid
   "max_columns": 3,            // 1..6
-  "max_api_rows": 6,           // 0 = expand all; 1..48; default 6
+  "max_api_rows": 0,           // 0 = expand all (default); 1..48 = truncate
   "reading": {"zh": "本层 8 个子模块…", "en": "…"},
   "order": ["dsh-normify.engine.model.text", "…"],
   "groups": [{"id": "model", "title": {"zh": "模型与契约", "en": "Model"}, "children": ["…"]}],
@@ -398,7 +412,7 @@ node ci-contract-check.cjs   # bundle declaration + exactly 30 tools + provider-
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (Chinese) |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | the generator skill (the AI's playbook) |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.1) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.2) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | contributing guide |
 | [`SECURITY.md`](SECURITY.md) | security policy |
 

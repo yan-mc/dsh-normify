@@ -7,8 +7,8 @@ import { deriveParent, isValidId, moduleFilePath, splitId } from './ids.js';
 import { loadAllModules, writeModuleFile, fingerprintOf, gitHead } from './store.js';
 import { evaluatePolicy, loadPolicyFile } from './policy.js';
 import { l1Validate } from './frontmatter.js';
-import { deleteLayoutFile, layoutRelPath } from './layout.js';
-import type { Diagnostic, Module, ModuleState, ModuleFile } from './types.js';
+import { deleteLayoutFile, layoutRelPath, loadLayoutFile, writeLayoutFile } from './layout.js';
+import type { Diagnostic, LayoutData, Module, ModuleState, ModuleFile } from './types.js';
 import type { Dirent } from 'node:fs';
 /**
  * 修改强化：patch / batch（原子）/ move（级联）/ refresh（激活）。
@@ -63,6 +63,8 @@ interface LayoutPlanEntry {
     from: string;
     to: string;
     id: string;
+    /** 迁移时已重写好的渲染数据；缺失表示按字节搬运（内容无法解析）。 */
+    data?: LayoutData;
 }
 async function loadProject(projectDir: string): Promise<{ files: ModuleFile[]; byId: Map<string, ModuleFile>; errors: Diagnostic[]; warnings: Diagnostic[] }> {
     const loaded = await loadAllModules(projectDir);
@@ -203,7 +205,8 @@ export async function patchModule(projectDir: string, id: string, patch: Record<
     if (opts.dryRun === true) {
         return { ok: errorsOut.length === 0, dryRun: true, errors: errorsOut, warnings, changed: [], detail: { file: rel, module: merged.module } };
     }
-    await writeModuleFile(projectDir, merged.module, bodyOverride ?? byId.get(id)!.body ?? '');
+    const writeRes = await writeModuleFile(projectDir, merged.module, bodyOverride ?? byId.get(id)!.body ?? '');
+    warnings.push(...writeRes.warnings);
     return { ok: errorsOut.length === 0, dryRun: false, errors: errorsOut, warnings, changed: [rel], detail: { file: rel }, module: merged.module, file: rel };
 }
 export interface BatchItem {
@@ -287,8 +290,10 @@ export async function batchWrite(projectDir: string, items: BatchItem[], mode: '
     try {
         // 父模块优先写入，保证晋升顺序稳定
         targets.sort((a, b) => a.module.id.length - b.module.id.length);
-        for (const t of targets)
-            await writeModuleFile(projectDir, t.module, bodies.get(t.module.id) ?? '');
+        for (const t of targets) {
+            const writeRes = await writeModuleFile(projectDir, t.module, bodies.get(t.module.id) ?? '');
+            warnings.push(...writeRes.warnings);
+        }
     }
     catch (error) {
         await restoreProject(projectDir, snap);
@@ -404,21 +409,136 @@ export async function moveModuleTree(projectDir: string, id: string, opts: MoveO
         const from = oldSrc !== undefined ? 'modules/' + oldSrc.file : null;
         writePlan.push({ from, to, module: m, moved: oldEntry !== undefined, body: bodyOf.get(oldId) ?? '' });
     }
-    // 渲染数据：随子树迁移；降级为叶子的模块删除渲染数据
+    // 渲染数据：随子树迁移，并把 id / order / groups / edge_hints 一并改写到新世界；
+    // 父层渲染数据去掉已迁出子模块的引用（旧父级）、补上新子模块的 order（新父级）。
+    // 降级为叶子的模块删除渲染数据。
     const layoutPlan: LayoutPlanEntry[] = [];
     const layoutDeletes: string[] = [];
-    for (const [from, to] of mapping) {
-        const oldLayout = layoutRelPath(from);
-        if (existsSync(join(projectDir, oldLayout)))
-            layoutPlan.push({ from: oldLayout, to: layoutRelPath(to), id: to });
-    }
     for (const p of writePlan) {
         const hasChildren = all.some(x => x.parent === p.module.id) || p.module.parent === null;
         if (!hasChildren && existsSync(join(projectDir, layoutRelPath(p.module.id))))
             layoutDeletes.push(p.module.id);
     }
+    const deletedLayoutIds = new Set(layoutDeletes);
+    const movedOldIds = new Set(mapping.keys());
+    const now = new Date().toISOString();
+    const remap = (old: string): string => mapping.get(old) ?? old;
+    const unparsedLayouts: string[] = [];
+    /** 父层渲染数据：删掉指向已迁出子模块的 order / groups / edge_hints 引用；无改动返回 null。 */
+    const pruneLayoutRefs = (layout: LayoutData): LayoutData | null => {
+        const next: LayoutData = { ...layout };
+        let touched = false;
+        if (layout.order !== undefined) {
+            const kept = layout.order.filter(x => !movedOldIds.has(x));
+            if (kept.length !== layout.order.length) {
+                touched = true;
+                if (kept.length > 0)
+                    next.order = kept;
+                else
+                    delete next.order;
+            }
+        }
+        if (layout.groups !== undefined) {
+            const kept = layout.groups
+                .map(g => ({ ...g, children: g.children.filter(x => !movedOldIds.has(x)) }))
+                .filter(g => g.children.length > 0);
+            if (kept.length !== layout.groups.length) {
+                touched = true;
+                if (kept.length > 0)
+                    next.groups = kept;
+                else
+                    delete next.groups;
+            }
+        }
+        if (next.groups === undefined && next.mode === 'groups')
+            delete next.mode;
+        if (layout.edge_hints !== undefined) {
+            const kept = layout.edge_hints.filter(h => !movedOldIds.has(h.from) && !movedOldIds.has(h.to));
+            if (kept.length !== layout.edge_hints.length) {
+                touched = true;
+                if (kept.length > 0)
+                    next.edge_hints = kept;
+                else
+                    delete next.edge_hints;
+            }
+        }
+        if (!touched)
+            return null;
+        next.updated_at = now;
+        return next;
+    };
+    for (const [from, to] of mapping) {
+        const oldLayout = layoutRelPath(from);
+        if (!existsSync(join(projectDir, oldLayout)))
+            continue;
+        const loaded = await loadLayoutFile(projectDir, from);
+        if (loaded.layout === null) {
+            // 数据本身坏了：按原样搬运（迁移不该被坏渲染数据拖死），随后 L2 validate 会报出来
+            unparsedLayouts.push(oldLayout);
+            layoutPlan.push({ from: oldLayout, to: layoutRelPath(to), id: to });
+            continue;
+        }
+        const children = new Set(all.filter(m => m.parent === to).map(m => m.id));
+        const migrated: LayoutData = { ...loaded.layout, id: to, updated_at: now };
+        if (loaded.layout.order !== undefined)
+            migrated.order = loaded.layout.order.map(remap).filter(x => children.has(x));
+        if (loaded.layout.groups !== undefined) {
+            const groups = loaded.layout.groups
+                .map(g => ({ ...g, children: g.children.map(remap).filter(x => children.has(x)) }))
+                .filter(g => g.children.length > 0);
+            if (groups.length > 0)
+                migrated.groups = groups;
+            else
+                delete migrated.groups;
+        }
+        if (migrated.groups === undefined && migrated.mode === 'groups')
+            delete migrated.mode;
+        if (loaded.layout.edge_hints !== undefined) {
+            const hints = loaded.layout.edge_hints
+                .map(h => ({ ...h, from: remap(h.from), to: remap(h.to) }))
+                .filter(h => children.has(h.from) && children.has(h.to) && h.from !== h.to);
+            if (hints.length > 0)
+                migrated.edge_hints = hints;
+            else
+                delete migrated.edge_hints;
+        }
+        layoutPlan.push({ from: oldLayout, to: layoutRelPath(to), id: to, data: migrated });
+    }
+    const layoutRewrites: {
+        id: string;
+        data: LayoutData;
+    }[] = [];
+    const parentIds = new Set<string>();
+    if (oldParentId !== null)
+        parentIds.add(oldParentId);
+    if (newParentId !== null)
+        parentIds.add(newParentId);
+    for (const pid of [...parentIds].sort()) {
+        // 被移动的模块与降级为叶子的模块没有渲染数据要维护
+        if (deletedLayoutIds.has(pid) || movedOldIds.has(pid))
+            continue;
+        if (!existsSync(join(projectDir, layoutRelPath(pid))))
+            continue;
+        const loaded = await loadLayoutFile(projectDir, pid);
+        if (loaded.layout === null) {
+            unparsedLayouts.push(layoutRelPath(pid));
+            continue;
+        }
+        let data: LayoutData | null = pid === oldParentId ? pruneLayoutRefs(loaded.layout) : null;
+        if (pid === newParentId) {
+            const base = data ?? loaded.layout;
+            if (base.order !== undefined && !base.order.includes(newId))
+                data = { ...base, order: [...base.order, newId], updated_at: now };
+        }
+        if (data !== null)
+            layoutRewrites.push({ id: pid, data });
+    }
+    if (unparsedLayouts.length > 0) {
+        warnings.push(diag('warning', 'layout/unparsed-carried', '渲染数据无法解析，已按原样搬运（未重写 id/order）：' + unparsedLayouts.join('、'), {}, { paths: unparsedLayouts }, ['用 normify_layout_upsert 重写这些层']));
+    }
     const writeTos = writePlan.filter(p => p.from === null || p.from !== p.to).map(p => p.to);
-    const changed = [...writeTos, ...layoutPlan.map(p => p.to), ...layoutDeletes.map(id => layoutRelPath(id))];
+    const rewritePaths = layoutRewrites.map(r => layoutRelPath(r.id));
+    const changed = [...writeTos, ...layoutPlan.map(p => p.to), ...rewritePaths, ...layoutDeletes.map(id => layoutRelPath(id))];
     if (opts.dryRun === true) {
         return {
             ok: true,
@@ -426,7 +546,7 @@ export async function moveModuleTree(projectDir: string, id: string, opts: MoveO
             errors: [],
             warnings,
             changed,
-            detail: { moves, rewired, layouts: layoutPlan, layout_deletes: layoutDeletes, writes: writePlan.map(p => ({ id: p.module.id, from: p.from, to: p.to })) },
+            detail: { moves, rewired, layouts: layoutPlan, layout_rewrites: layoutRewrites.map(r => ({ id: r.id, path: layoutRelPath(r.id) })), layout_deletes: layoutDeletes, writes: writePlan.map(p => ({ id: p.module.id, from: p.from, to: p.to })) },
             moves,
             rewired,
         };
@@ -437,19 +557,29 @@ export async function moveModuleTree(projectDir: string, id: string, opts: MoveO
         for (const p of writePlan)
             if (p.moved && p.from !== null)
                 await rm(join(projectDir, p.from), { force: true });
-        // 2) 渲染数据随迁
+        // 2) 渲染数据随迁（id/order/groups/edge_hints 已重写；内容无法解析的按字节搬运）
         for (const l of layoutPlan) {
+            if (l.data !== undefined) {
+                await writeLayoutFile(projectDir, l.data);
+                await rm(join(projectDir, l.from), { force: true });
+                continue;
+            }
             const buf = await readFile(join(projectDir, l.from), 'utf8');
             await mkdir(dirname(join(projectDir, l.to)), { recursive: true });
             await writeFile(join(projectDir, l.to), buf, 'utf8');
             await rm(join(projectDir, l.from), { force: true });
         }
+        // 2b) 父层渲染数据引用维护（旧父级删引用、新父级补 order）
+        for (const r of layoutRewrites)
+            await writeLayoutFile(projectDir, r.data);
         // 3) 降级为叶子的模块删除渲染数据
         for (const delId of layoutDeletes)
             await deleteLayoutFile(projectDir, delId);
         // 4) 写入全部脏模块（父 → 子，保证父子形态稳定）
-        for (const p of writePlan)
-            await writeModuleFile(projectDir, p.module, p.body);
+        for (const p of writePlan) {
+            const writeRes = await writeModuleFile(projectDir, p.module, p.body);
+            warnings.push(...writeRes.warnings);
+        }
         // 5) 清理空目录
         const emptyDirs = new Set<string>();
         for (const p of writePlan)
@@ -474,7 +604,7 @@ export async function moveModuleTree(projectDir: string, id: string, opts: MoveO
         await restoreProject(projectDir, snap);
         return { ok: false, dryRun: false, errors: [diag('error', 'module/move-failed', '移动失败，已回滚：' + String(error instanceof Error ? error.message : error), {}, {}, [])], warnings, changed: [], detail: {}, moves: [], rewired: [] };
     }
-    return { ok: true, dryRun: false, errors: [], warnings, changed, detail: { moves, rewired, layouts: layoutPlan, layout_deletes: layoutDeletes }, moves, rewired };
+    return { ok: true, dryRun: false, errors: [], warnings, changed, detail: { moves, rewired, layouts: layoutPlan, layout_rewrites: layoutRewrites.map(r => ({ id: r.id, path: layoutRelPath(r.id) })), layout_deletes: layoutDeletes }, moves, rewired };
 }
 export interface RefreshOptions extends EditOptions {
     ids?: string[];
@@ -566,8 +696,10 @@ export async function refreshModules(projectDir: string, opts: RefreshOptions): 
     }
     const snap = await snapshotProject(projectDir);
     try {
-        for (const p of planned)
-            await writeModuleFile(projectDir, p.module, byId.get(p.id)!.body ?? '');
+        for (const p of planned) {
+            const writeRes = await writeModuleFile(projectDir, p.module, byId.get(p.id)!.body ?? '');
+            warnings.push(...writeRes.warnings);
+        }
     }
     catch (error) {
         await restoreProject(projectDir, snap);
