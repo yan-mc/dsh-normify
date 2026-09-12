@@ -57,19 +57,23 @@ cd dsh-normify && npm install && npm run build && npm pack
 
 - [README](README.md) ｜ [English](README_EN.md) ｜ [正式规范](docs/SPEC.zh-CN.md) ｜ [生成器技能](skills/normify-gen/SKILL.md) ｜ [变更日志](CHANGELOG.md)
 
----
-
-## 若要用命令行创建 Release（需要 `gh` CLI 且已登录）
+## 📦 安装：从本 Release 直接下载
 
 ```powershell
-# 安装：winget install --id GitHub.cli
-gh auth login                       # 交互式登录一次
-cd F:\Deepseek_harness\dsh-normify
-gh release create v0.5.1 `
-  --title "v0.5.1 · 渲染器防重叠 + 更精细的结构数据" `
-  --notes-file docs/RELEASE-0.5.1.md `
-  "F:\Deepseek_harness\dsh-external-dsh-normify-0.5.1.tgz"
+# Windows（PowerShell）
+Invoke-WebRequest -Uri "https://github.com/yan-mc/dsh-normify/releases/download/v0.5.1/dsh-external-dsh-normify-0.5.1.tgz" -OutFile "dsh-external-dsh-normify-0.5.1.tgz"
 ```
 
-或者直接在网页上创建：<https://github.com/yan-mc/dsh-normify/releases/new?tag=v0.5.1>
-（标题与正文从本文件复制即可；附件可上传 `dsh-external-dsh-normify-0.5.1.tgz`）
+```bash
+# macOS / Linux
+curl -L -o dsh-external-dsh-normify-0.5.1.tgz \
+  https://github.com/yan-mc/dsh-normify/releases/download/v0.5.1/dsh-external-dsh-normify-0.5.1.tgz
+```
+
+| 项 | 值 |
+| --- | --- |
+| 附件 | `dsh-external-dsh-normify-0.5.1.tgz` |
+| 体积 | 188 668 B（83 个文件） |
+| SHA-256 | `5ef29340a751db9f0b0ac752114f52d3cceeb7a9a0716d2c64ac116d2db0c7bb` |
+
+装完之后的 profile 登记方式（`dependencies` + `dsh.profile.bundles`）见 [README「安装」](README.md)。
