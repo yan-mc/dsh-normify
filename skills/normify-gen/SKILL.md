@@ -67,13 +67,14 @@ normify-demo-repo/
 
 容器模块文件 = `<最后一段>/index.md`；叶子 = `<最后一段>.md`。**文件形态由工具自动维护**：给叶子写第一个子模块时父文件自动晋升为 index.md；删除最后一个子模块时自动降级。
 
-## 2. 工具清单（30 个）
+## 2. 工具清单（31 个）
 
 | 工具 | 用途 |
 |---|---|
 | `normify_tree_list` | 列出全部 normify 项目与树 |
 | `normify_module_get` | 读单个模块 |
 | `normify_module_list` | 列模块（按父/树过滤，含统计） |
+| `normify_project_init` | **开新项目第 0 步**：建 `normify-<slug>/` + 默认架构规则；可选一步建"计划态根模块"（幂等） |
 | `normify_module_upsert` | 写模块（L1 校验、幂等、自动晋升父文件） |
 | `normify_module_delete` | 删模块及子树（返回悬空边预警） |
 | `normify_module_promote` | 叶子晋升容器 |
@@ -96,7 +97,7 @@ normify-demo-repo/
 | `normify_check` | 设计前预检：拟建模块/依赖是否违反核心约束与架构规则 |
 | `normify_brief` | 开发指引：目标模块、契约、约束、影响面、建议、验收清单 |
 | `normify_change_open/update/list/close` | 开发变更日志（changes/，随结构目录回档）；close 强制 0 error |
-| `normify_help` | 字段速查 |
+| `normify_help` | **分主题**速查：`fields`(字段) / `deps`(箭头与 API 直连) / `renders` / `flow`(伴随流程) / `tools` / `policy` / `errors` / `all`；未知主题报错并列出主题 |
 
 所有工具用 `project`（slug）或 `dir`（结构数据目录绝对路径）定位项目。
 
@@ -125,6 +126,8 @@ normify-demo-repo/
 
 ### 4.1 任务开始（设计）
 
+0. `normify_project_init`（**新项目/空目录时**）：建结构数据目录并写入默认架构规则；可选 `root` 一步建"计划态根模块"。
+   - `normify_change_open` 现在也会**自动建项目目录**（0.5.3 起），所以这一步只在你想显式初始化/一次建好根模块时才需要。
 1. `normify_change_open`：开一个变更（title / intent / modules{create,modify,delete} / acceptance），结构目录内留下 `changes/<id>.json`，可随工程回档。
 2. `normify_brief`：拿开发指引——目标模块与契约、影响面（谁依赖我）、架构规则、建议新增模块（含 id 与文件路径建议）、验收清单与收尾步骤。
 3. `normify_check`：把**拟建模块与拟加依赖**先预检（parent 推导、深度、环、policy 违规）；不通过就改设计，不要带病动手。
@@ -313,4 +316,6 @@ deps:
 
 ---
 
-*本技能与 `normify_help` 工具的字段速查保持同步（含 fingerprint 算法）。规范全文：工作区《Normify-正式规范.md》。*
+*本技能与 `normify_help` 工具的分主题速查保持同步（含 fingerprint 算法、伴随流程与诊断码）。规范全文：工作区《Normify-正式规范.md》。*
+
+- **API 直连（0.5.3 强调）**：`deps` 的两端都声明了 API 时请补 `from_api`/`to_api` —— 箭头才会钉在具体 API 行上；不补则只能落在框边，`normify_validate` 会给出聚合 warning `dep/unanchored`（含条数与示例）。

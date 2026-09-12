@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.2-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.3-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
-  <img src="https://img.shields.io/badge/tools-30-0ea5e9?style=flat-square" alt="30 tools">
+  <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
 </p>
 
 <h1 align="center">Normify · Normalized Architecture Map Builder</h1>
@@ -111,7 +111,29 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 ## 3. Release highlights
 
-### v0.5.2 — three real data-corrupting defects fixed (current)
+### v0.5.3 — the four friction points found by a real companion-development A/B (current)
+
+These come from an actual A/B run: two AIs implemented the same backend spec, one with the plugin driving the
+companion flow, one writing plain code. Both scored **42/42** on a hidden black-box suite. The plugin side shipped an
+extra 41-module / 110-API / 10-layer architecture dataset — and hit the four rough edges below:
+
+- **`normify_help` now takes a `topic`**: it used to ignore its arguments entirely and always return the same field
+  cheat-sheet, so the agent read the plugin source just to get exact parameter names (~4 minutes lost). Topics:
+  `fields` (default) / `deps` (arrows + API-direct) / `renders` / `flow` / `tools` / `policy` / `errors` / `all`.
+  An unknown topic now **fails loudly** and lists the valid ones instead of being silently ignored.
+- **Project bootstrap**: new 31st tool `normify_project_init` creates `normify-<slug>/` plus the default policy,
+  optionally with a planned root module in one call (idempotent). `normify_change_open` now also **creates the project
+  directory on demand** (it used to fail with `project/no-modules`), and `normify_brief` on a missing module returns an
+  actionable hint instead of a bare error.
+- **Causal batch diagnostics**: one `label-too-long` used to cascade into three `dep/target-missing` errors (L1-failed
+  modules are removed from the batch working set). Follow-on errors are now reported as `dep/target-dropped` /
+  `structure/parent-dropped` naming the **root-cause diagnostic**, and the failed response carries `root_causes` + a `hint`.
+- **API-direct guidance**: arrows whose endpoints both declare APIs but that have no `from_api` / `to_api` now produce an
+  aggregated `dep/unanchored` warning (count + first three examples). This was the wasted capability in the experiment:
+  110 declared APIs, 54 arrows, zero anchored — unanchored arrows can only land on the box edge, never on an API row.
+  Guidance, not relaxation: a wrong anchor key is still an error.
+
+### v0.5.2 — three real data-corrupting defects fixed
 
 - **`normify_module_upsert` keeps its required list**: `parameters.required` is `["frontmatter"]` again, and the 9
   mandatory frontmatter fields (uid / id / parent / name / description / source / revision / updated_at / fingerprint)
@@ -159,7 +181,7 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 ## 4. Screenshots
 
-| Overview (129 modules) | Tools (30 tools, five families) |
+| Overview (129 modules) | Tools (31 tools, five families) |
 | --- | --- |
 | ![overview](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/overview.png) | ![tools](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/tools.png) |
 
@@ -254,7 +276,7 @@ Artifacts (inside the structure directory `normify-<slug>/`):
 | `receipt.json` | SHA-256 frozen receipt (stats + warning summary) |
 | `normify.html` | the single-file interactive map |
 
-## 7. The 30 tools
+## 7. The 31 tools
 
 | Family | Tools | Purpose |
 | --- | --- | --- |
@@ -372,7 +394,7 @@ npm install          # devDependencies (typescript / @types/node / cordis / sche
 npm run build        # src/ → lib/ via tsc
 npm run typecheck    # tsc --noEmit
 npm test             # engine-e2e.mjs + companion-e2e.mjs (DSH-independent end-to-end)
-node ci-contract-check.cjs   # bundle declaration + exactly 30 tools + provider-safe names
+node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-safe names
 ```
 
 | Path | Content |

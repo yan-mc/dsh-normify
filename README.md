@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.2-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.3-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
-  <img src="https://img.shields.io/badge/tools-30-0ea5e9?style=flat-square" alt="30 tools">
+  <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
 </p>
 
 <h1 align="center">Normify · 归一化框架图构建器</h1>
@@ -21,7 +21,7 @@
 
 Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的开发流程**：
 
-- **给 AI 的**：`normify-gen` 技能 + **30 个 `normify_*` 工具** —— 让模型把仓库分析成模块树结构数据，
+- **给 AI 的**：`normify-gen` 技能 + **31 个 `normify_*` 工具** —— 让模型把仓库分析成模块树结构数据，
   并在后续开发中**先建图后编程、伴随编程改图**（计划态建树 → 逐个实现 → 关单收尾）。
 - **给引擎的**：零容忍校验（L1 写时 / L2 全项目 / L3 冻结）+ 确定性编译（`tree.json` 等四件产物，SHA-256 冻结）
   + 渲染数据（`renders/`，决定"每一层怎么画"）。
@@ -105,7 +105,27 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 3. 最新变化
 
-### v0.5.2 · 修掉三处会写坏数据的真实缺陷（当前版本）
+### v0.5.3 · 把「伴随编程实测」暴露的 4 个摩擦点修掉（当前版本）
+
+这四个问题来自一次真实的 A/B 对照实验：两个 AI 用同一份规范写同一个后端，一个带插件走伴随流程、一个纯手写
+（最终代码在隐藏黑盒验收上都是 **42/42**）。插件组多交付了 41 模块 / 110 API / 10 层的结构数据，但也踩到了下面 4 个坑：
+
+- **`normify_help` 支持 `topic`**：此前它完全忽略入参，只返回同一份字段速查 —— 实测里 AI 为了拿准
+  `change_open` / `layout_upsert` / `change_close` 的参数名，只能去读插件源码（多花约 4 分钟）。
+  现在按主题返回：`fields`（默认）/ `deps`（箭头与 API 直连）/ `renders` / `flow`（伴随流程）/ `tools`（工具清单）/
+  `policy` / `errors`（常见诊断码与修法）/ `all`；**传错主题会直接报错并列出可用主题**，不再静默忽略。
+- **项目初始化通道**：新增第 31 个工具 `normify_project_init` —— 建 `normify-<slug>/` + 默认架构规则，
+  可选 `root` 一步创建"计划态根模块"（幂等）；同时 `normify_change_open` 现在也会**自动建项目目录**
+  （此前报 `project/no-modules`，AI 只能用 `module_batch {items:[],dry_run:true}` 绕过去）；
+  `normify_brief` 遇到不存在的模块会给出"先 init / 先建树 / 改用 task"的可执行提示。
+- **批量诊断的因果链**：一条 `label-too-long` 曾连带出 3 条 `dep/target-missing`（因为 L1 失败的模块会被移出批次工作集），
+  AI 只能去读源码才能确认根因。现在连带错误改报 `dep/target-dropped` / `structure/parent-dropped`，
+  在 message 与 evidence 里点明**根因诊断码**，并在失败响应的 `root_causes` 里直接列出被丢弃的模块（附 `hint`）。
+- **「API 直连」引导**：两端都声明了 API 却没写 `from_api` / `to_api` 的箭头，`normify_validate` 会给出**聚合**
+  warning `dep/unanchored`（条数 + 前 3 条示例）。这正是实验里被浪费的能力：110 条 API 声明，54 条箭头 0 条锚定 ——
+  不锚定，箭头就只能落在框边，钉不到 API 行上。**引导≠放宽**：锚错键仍然是 error。
+
+### v0.5.2 · 修掉三处会写坏数据的真实缺陷
 
 - **`normify_module_upsert` 的必填表不再丢失**：`parameters.required` 恢复为 `["frontmatter"]`，
   `frontmatter` 的 9 个必填字段（uid / id / parent / name / description / source / revision / updated_at / fingerprint）
@@ -150,7 +170,7 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 4. 截图
 
-| 总览层（129 模块） | 工具层（30 个工具、五族） |
+| 总览层（129 模块） | 工具层（31 个工具、五族） |
 | --- | --- |
 | ![overview](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/overview.png) | ![tools](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/tools.png) |
 
@@ -199,7 +219,7 @@ dsh plugin --profile web-desktop add <dsh-normify 目录的绝对路径>
 ### 验证安装
 
 ```bash
-# 在 profile 目录下用裸包名导入，应打印 30 个工具 + 技能
+# 在 profile 目录下用裸包名导入，应打印 31 个工具 + 技能
 node -e "import('@dsh-external/dsh-normify').then(m=>console.log(m.name))"
 # 或在 DSH 里直接问 AI：「列出你手上的 normify 工具」
 ```
@@ -242,15 +262,16 @@ normify_tree_list → normify_module_upsert（根 + 一级子模块）
 | `receipt.json` | 产物 SHA-256 冻结回执（含 stats 与 warning 摘要） |
 | `normify.html` | 单文件交互式架构图 |
 
-## 7. 30 个工具
+## 7. 31 个工具
 
 | 族 | 工具 | 用途 |
 | --- | --- | --- |
-| **参数** | `normify_help` | 字段与工具速查（写模块前先读） |
+| **参数** | `normify_help` | **分主题**速查：`fields` 字段 / `deps` 箭头与 API 直连 / `renders` 渲染数据 / `flow` 伴随流程 / `tools` 工具清单 / `policy` 规则 / `errors` 诊断码 / `all`（0.5.3 起忽略入参会报错并列出主题） |
 | **读取** | `normify_tree_list` | 列出项目与每棵树的根 |
 | | `normify_module_get` / `normify_module_list` | 读单个模块 / 按父级或树列模块（含统计） |
 | | `normify_search` / `normify_deps_find` / `normify_outline` | 检索、反查"谁依赖我"、重建 `outline.md` |
-| **写入** | `normify_module_upsert` | 创建/更新模块（写时 L1 校验、文件形态自动晋升/降级） |
+| **写入** | `normify_project_init` | 初始化结构数据项目（建目录 + 默认架构规则；可一步建"计划态根模块"）——**开新项目的第 0 步** |
+| | `normify_module_upsert` | 创建/更新模块（写时 L1 校验、文件形态自动晋升/降级） |
 | | `normify_module_delete` / `normify_module_promote` | 删子树（附悬空边预警）/ 叶子晋升容器 |
 | **演进** | `normify_module_patch` | 部分更新（`expect_updated_at` 并发保护 + `dry_run`） |
 | | `normify_module_batch` | 原子批量 upsert/patch（失败整批回滚） |
@@ -401,7 +422,7 @@ npm install          # 安装 devDependencies（typescript / @types/node / cordi
 npm run build        # src/ → lib/（tsc；两条路径：本地 vendor-ts 或 npm）
 npm run typecheck    # tsc --noEmit
 npm test             # engine-e2e.mjs + companion-e2e.mjs（不依赖 DSH 的 node 端到端）
-node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 30 个工具 + provider 安全命名
+node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工具 + provider 安全命名
 ```
 
 | 目录 | 内容 |

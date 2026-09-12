@@ -4,7 +4,7 @@
 > 状态：**v1.0 定稿**（取代《ModTree-制作计划草案.md》；该旧草案已从工作区清理）｜ 项目代号沿革：ModTree → **Normify**
 
 > **实现状态（2026-09-12，v0.4.1）**：已适配 DeepSeek Harness `0.1.5-rc.2` / DSHEAC AIO 6.9.3 桌面端（profile `web-desktop`）。
-> 1. 工具名 `normify_*`，共 **30 个**；模块新增 `state`（active/planned/deprecated）、`replacement`、`tags`；计划优先 + `normify_module_refresh(activate)` 激活。
+> 1. 工具名 `normify_*`，共 **31 个**；模块新增 `state`（active/planned/deprecated）、`replacement`、`tags`；计划优先 + `normify_module_refresh(activate)` 激活。
 > 2. 项目创建自动安装 `policy.yml`（完整规则集）；`normify_validate` 强制执行；`normify_changes/` 变更日志 + `normify_change_close` **0 error 强制**。
 > 3. **渲染器 v3（0.4.1）**：连线走自由通道（≥16px 间距、不贴框）、viewBox 全几何自适应（不出界）、叶子框内 API 明细、`from_api/to_api` API 直连、跨层虚线 ×N 聚合、缩放/悬停高亮。
 > 4. **生成粒度不设上限**：按单一功能单元拆分，鼓励 100–1000+ 模块；v0.3 的 `renders/` 渲染数据集、12 段 id、渲染器分组/车道/去重继续有效。

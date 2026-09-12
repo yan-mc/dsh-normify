@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEP_KINDS, PROTOCOLS } from './engine/types.js';
-import { fieldReference, l1Validate } from './engine/frontmatter.js';
+import { l1Validate } from './engine/frontmatter.js';
 import { apiKey, isValidId, slugify, splitId } from './engine/ids.js';
 import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from './engine/store.js';
 import { LAYOUT_SCHEMA_VERSION, deleteLayoutFile, edgeKey, l1ValidateLayout, layoutRelPath, listLayoutFiles, loadLayoutFile, writeLayoutFile } from './engine/layout.js';
@@ -14,8 +15,10 @@ import { validateProject } from './engine/validate.js';
 import { buildProject } from './engine/compile.js';
 import { renderProject } from './engine/render.js';
 import { fmtDiag } from './engine/diag.js';
+import { HELP_TOPICS, topicReference } from './engine/reference.js';
 
 import type { Context } from '@deepseek-ai/cordis';
+import type { HelpTopic, ToolCatalogEntry } from './engine/reference.js';
 import type { ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, Module, ModuleFile, ModuleState, PolicyData, PolicyRule, SourceRef } from './engine/types.js';
 
 export interface ToolEnv {
@@ -107,6 +110,19 @@ interface ModuleUpsertArgs extends ProjectArgs {
 
 interface RepoRootArgs extends ProjectArgs {
     repoRoot?: string;
+}
+
+interface HelpArgs {
+    topic?: string;
+}
+
+interface ProjectInitArgs extends ProjectArgs {
+    root?: {
+        id?: string;
+        name?: LocalizedText;
+        description?: LocalizedText;
+        repository?: string;
+    };
 }
 
 interface SyncArgs extends ProjectArgs {
@@ -559,7 +575,9 @@ function diagnosticsOut(errors: Diagnostic[], warnings: Diagnostic[]): { ok: boo
     };
 }
 export function registerTools(ctx: Context, env: ToolEnv): void {
+    const toolCatalog: ToolCatalogEntry[] = [];
     const register = <A>(key: string, def: ToolDef, execute: (args: A) => Promise<unknown>): void => {
+        toolCatalog.push({ name: key, description: def.description, behavior: def.behavior });
         const tools = (ctx as unknown as { tools?: ToolService }).tools;
         if (tools === undefined || tools.register === undefined)
             return;
@@ -681,6 +699,68 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             dep_count: f.module.deps?.length ?? 0,
         }));
         return { ok: true, count: rows.length, modules: rows };
+    });
+    register('normify_project_init', {
+        description: '初始化结构数据项目（幂等，写工具）：创建 normify-<slug>/ 目录并安装默认架构规则；可选用 root 一步创建"计划态根模块"（state=planned、fingerprint=pending、source 待落地）。之后即可 change_open / brief / 建子树。',
+        behavior: 'write',
+        parameters: params({
+            root: freeObjectParam('可选：一步创建计划态根模块 {id, name{zh,en}, description{zh,en}, repository?}；省略则只建目录与规则', false),
+            ...projectParams(true),
+        }),
+    }, async (args: ProjectInitArgs) => {
+        const proj = await resolve(args, true);
+        const before: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const policy = await loadPolicyFile(proj.dir);
+        const ruleCount = policy.policy?.rules?.length ?? 0;
+        let rootId: string | null = null;
+        const rootArgs = args.root;
+        if (rootArgs !== undefined && rootArgs !== null) {
+            const id = typeof rootArgs.id === 'string' ? rootArgs.id.trim() : '';
+            if (!isValidId(id) || splitId(id)!.length !== 1) {
+                return { ok: false, error: { code: 'structure/id-format', message: '根模块 id 必须是单段合法 id（如 whiteboard），实际：' + id } };
+            }
+            if (before.some(f => f.module.id === id)) {
+                rootId = id;
+            }
+            else {
+                const fm: Record<string, unknown> = {
+                    uid: randomBytes(4).toString('hex'),
+                    id,
+                    parent: null,
+                    name: rootArgs.name,
+                    description: rootArgs.description,
+                    source: [],
+                    revision: '0'.repeat(40),
+                    updated_at: new Date().toISOString(),
+                    fingerprint: 'pending',
+                    state: 'planned',
+                    ...(typeof rootArgs.repository === 'string' && rootArgs.repository.trim() !== '' ? { repository: rootArgs.repository.trim() } : {}),
+                };
+                const r = l1Validate(fm, 'project.init/root');
+                if (r.module === null) {
+                    return { ok: false, errors: r.errors.map(fmtDiag), summary: r.errors.length + ' error（未写入）', hint: 'root 需要 {id, name:{zh,en}, description:{zh,en}}；根模块 parent 固定为 null。' };
+                }
+                await writeModuleFile(proj.dir, r.module, '');
+                rootId = r.module.id;
+            }
+        }
+        return {
+            ok: true,
+            dir: proj.dir,
+            slug: proj.slug,
+            created: before.length === 0,
+            modules_before: before.length,
+            policy_rules: ruleCount,
+            root_module: rootId,
+            next_steps: [
+                'normify_change_open：开一个变更（意图 + 涉及模块 + 验收标准）',
+                'normify_brief / normify_check：拿开发指引、做设计预检',
+                'normify_module_batch：state=planned + fingerprint=pending 建计划态骨架（叶子先声明 apis 契约）',
+                'normify_layout_upsert：每个容器写一层渲染数据（order + reading）',
+                '实现后 normify_module_refresh(activate=true) → normify_validate → normify_build → normify_render → normify_change_close',
+            ],
+            hint: '目录与默认架构规则已就绪（幂等：重复调用不会破坏已有内容）。',
+        };
     });
     register('normify_module_upsert', {
         description: '创建/更新一个模块（写时执行 L1 校验；幂等；自动晋升父模块文件形态）。',
@@ -1169,7 +1249,11 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         if (typeof args.id === 'string' && args.id.trim() !== '') {
             const id = args.id.trim();
             if (!byId.has(id))
-                return { ok: false, error: { code: 'module/not-found', message: '模块不存在：' + id } };
+                return {
+                    ok: false,
+                    error: { code: 'module/not-found', message: '模块不存在：' + id },
+                    hint: '该模块还没建：先用 normify_project_init 初始化项目（可顺带建计划态根模块），再用 normify_module_batch/upsert 建子树；若只想拿任务级指引，改用 task 参数（不传 id）。',
+                };
             candidates.add(id);
         }
         if (Array.isArray(args.files)) {
@@ -1351,7 +1435,21 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         const items = args.items.map(i => ({ ...i }));
         const r = await batchWrite(proj.dir, items, mode, { dryRun: args.dry_run === true });
         if (!r.ok) {
-            return { ok: false, dry_run: r.dryRun, errors: r.errors.map(fmtDiag), warnings: r.warnings.map(fmtDiag), summary: r.errors.length + ' error（整批未写入）' };
+            const dropped = (r.detail?.dropped_by_l1 ?? []) as { module: string; code: string; message: string }[];
+            return {
+                ok: false,
+                dry_run: r.dryRun,
+                errors: r.errors.map(fmtDiag),
+                warnings: r.warnings.map(fmtDiag),
+                summary: r.errors.length + ' error（整批未写入）',
+                // 0.5.3：把"被 L1 丢弃的模块"直接摆到调用方眼前，避免 1 个根因被读成 N 个互不相关的错误
+                ...(dropped.length > 0
+                    ? {
+                        root_causes: dropped,
+                        hint: '本批有 ' + dropped.length + ' 个模块未通过 L1 校验（见 root_causes）；errors 里的 dep/target-dropped 与 structure/parent-dropped 都是它们的连带错误。先修 root_causes 再整批重试（原子写入，本次未落盘）。',
+                    }
+                    : {}),
+            };
         }
         return {
             ok: true,
@@ -1445,7 +1543,9 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             ...projectParams(true),
         }, ['title', 'intent', 'modules', 'acceptance']),
     }, async (args: ChangeOpenArgs) => {
-        const proj = await resolve(args);
+        // 0.5.3：change_open 是写工具，首次使用时应自动创建结构数据目录与默认架构规则，
+        // 而不是甩一个 project/no-modules（实测中 AI 只能用 module_batch{items:[],dry_run:true} 绕过去）。
+        const proj = await resolve(args, true);
         const title = { ...args.title };
         const intent = { ...args.intent };
         const id = typeof args.id === 'string' && args.id.trim() !== ''
@@ -1657,10 +1757,24 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         };
     });
     register('normify_help', {
-        description: 'Normify 模块字段速查（生成器写模块时的字段规范）。',
+        description: '规范速查（按主题）：fields 模块字段 / deps 箭头与 API 直连 / renders 渲染数据 / flow 伴随开发主流程 / tools 工具清单 / policy 架构规则 / errors 常见诊断码 / all 全部。写模块或调工具前先查对应主题，不要靠猜参数名。',
         behavior: 'read',
-        parameters: params({}),
-    }, async () => {
-        return { ok: true, reference: fieldReference() };
+        parameters: params({
+            topic: strOpt('主题：' + HELP_TOPICS.join(' | ') + '（默认 fields）'),
+        }),
+    }, async (args: HelpArgs) => {
+        const raw = typeof args.topic === 'string' ? args.topic.trim().toLowerCase() : '';
+        const topic = (raw === '' ? 'fields' : raw) as HelpTopic;
+        if (!HELP_TOPICS.includes(topic)) {
+            return {
+                ok: false,
+                error: {
+                    code: 'args/invalid-topic',
+                    message: '未知主题：' + raw + '（可用：' + HELP_TOPICS.join(' | ') + '）',
+                },
+            };
+        }
+        const ref = topicReference(topic, toolCatalog);
+        return { ok: true, topic, title: ref.title, reference: ref.text, topics: [...HELP_TOPICS] };
     });
 }

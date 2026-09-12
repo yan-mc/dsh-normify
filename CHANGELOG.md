@@ -7,6 +7,47 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.5.3] - 2026-09-12
+
+本版全部来自一次**伴随编程 A/B 对照实验**（同一份规范、两个 AI：一个带插件走伴随流程、一个纯手写；
+隐藏黑盒验收两组均 42/42）。实验记录见工作区 `test-results/2026-09-12-ab-companion/`。
+
+### 新增
+
+- **`normify_project_init`（第 31 个工具）**：初始化结构数据项目 —— 建 `normify-<slug>/` + 安装默认架构规则，
+  可选 `root: {id, name, description, repository?}` 一步创建**计划态根模块**（`state: planned`、`fingerprint: pending`、
+  `source: []`，之后 `module_refresh` 落地激活）。幂等。
+
+### 修复
+
+1. **`normify_help` 忽略入参**：0.5.2 只有一份固定字段速查，实测中 AI 为拿准 `change_open` / `layout_upsert` /
+   `change_close` 的参数名只能去读插件源码。现在支持 `topic`：`fields`（默认）/ `deps` / `renders` / `flow` / `tools` /
+   `policy` / `errors` / `all`；**未知主题返回 `args/invalid-topic` 并列出可用主题**（不再静默忽略）。
+   `topic=tools` 由注册表实时生成工具清单（名称 + 行为 + 描述），不会再与代码漂移。
+2. **缺少项目初始化通道**：
+   - `normify_change_open` 现在按写工具语义 `resolve(create: true)` 自动创建结构数据目录与默认架构规则
+     （此前报 `project/no-modules`，实验里只能靠 `module_batch {items: [], dry_run: true}` 绕过）；
+   - `normify_project_init` 提供显式入口；
+   - `normify_brief` 遇到不存在的模块时返回可执行 `hint`（先 init / 先建树 / 或改用 `task` 参数）。
+3. **批量诊断缺少因果链**：L1 校验失败的模块会被移出批次工作集，导致 1 条 `structure/label-too-long`
+   连带出 N 条 `dep/target-missing`（实验里 1 个根因报成 4 个 error，AI 读源码才定位到）。
+   现在：
+   - 连带诊断改报 **`dep/target-dropped`** / **`structure/parent-dropped`**，message 与
+     `evidence.root_cause_code` / `evidence.root_cause` 直接点明根因；
+   - 失败响应新增 `root_causes: [{module, code, message}]` 与 `hint`，`detail.dropped_by_l1` 同步提供。
+
+### 变更（引导，不阻断）
+
+- **新增聚合 warning `dep/unanchored`**：两端都声明了 API、却没写 `from_api` / `to_api` 的箭头会被汇总成一条 warning
+  （条数 + 前 3 条示例），提示"API 直连"才能把箭头钉到具体 API 行上。
+  实验数据显示这条引导确有价值：结构数据里 110 条 API、54 条箭头、**0 条锚定**，等于白丢渲染器最精细的一层。
+  **引导不等于放宽**：`from_api` / `to_api` 写错键仍然是 `dep/from-api-invalid` 的 error。
+
+### 测试
+
+- 新增 `tests/regression-0.5.3.mjs`（21 项断言）锁定以上 4 点；`ci-contract-check.cjs` 的工具数契约 30 → 31，
+  并断言 `normify_project_init` / `normify_help` / `normify_module_batch` 必须存在；`npm test` 串联 4 套测试。
+
 ## [0.5.2] - 2026-09-12
 
 ### 修复（三处会写坏数据的真实缺陷）
