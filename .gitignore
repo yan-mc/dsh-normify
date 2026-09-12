@@ -1,6 +1,30 @@
+# 依赖与构建
 node_modules/
 vendor-ts/
-.checkout
 *.tsbuildinfo
 *.tgz
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 %SystemDrive%/
+.checkout
+
+# 凭据与私密配置（严禁提交）
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.credentials.yaml
+.credentials.yaml
+credentials.json
+secrets.json
+*.secret
+*.secret.*
+.npmrc
+.netrc
