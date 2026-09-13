@@ -483,6 +483,7 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.4） |
+| [`docs/VIDEO-SCRIPT.zh-CN.md`](docs/VIDEO-SCRIPT.zh-CN.md) | **视频文字稿**（10 分钟完整版 + 60 秒速览 + 数字备忘卡 + 录制清单） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略 |
 
