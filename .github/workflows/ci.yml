@@ -23,6 +23,15 @@ jobs:
         run: npm test
       - name: Bundle + tool-name contract
         run: node ci-contract-check.cjs
+      - name: Portability guard (no Windows-only path juggling)
+        # 教训：tests 里曾用 pathname.replace(/^\//,'') 拼 file URL —— Windows 正常（/F:/…），
+        # Linux 上 pathname 以 / 开头、去掉后变成相对路径，被解析成 <cwd>/home/runner/… 而 ERR_MODULE_NOT_FOUND。
+        run: |
+          if grep -rIn "pathname\.replace" tests/ scripts/ ; then
+            echo "::error::use new URL(rel, import.meta.url).href instead of pathname.replace (POSIX-unsafe)"; exit 1
+          fi
+          echo "portability guard ok"
+
       - name: Sanity checks
         run: |
           node --check lib/index.js
