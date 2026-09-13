@@ -15,6 +15,8 @@ export interface ToolCatalogEntry {
     name: string;
     description: string;
     behavior: string;
+    /** 该工具的 JSON Schema（help 的 tool:<name> 主题据此打印参数树）。 */
+    parameters?: unknown;
 }
 
 const DEPS_REFERENCE = [
@@ -92,7 +94,18 @@ export function topicReference(topic: HelpTopic, catalog: ToolCatalogEntry[] = [
         case 'tools':
             return {
                 title: '工具清单（' + catalog.length + ' 个）',
-                text: catalog.map(t => t.name + ' [' + t.behavior + '] ' + t.description).join('\n'),
+                text: [
+                    catalog.map(t => {
+                        const schema = (t.parameters ?? {}) as { properties?: Record<string, unknown>; required?: string[] };
+                        const req = Array.isArray(schema.required) ? schema.required : [];
+                        const props = Object.keys(schema.properties ?? {});
+                        const opt = props.filter(x => !req.includes(x));
+                        return t.name + ' [' + t.behavior + '] ' + t.description
+                            + (props.length > 0 ? '\n      必填: ' + (req.length > 0 ? req.join(', ') : '（无）') + ' | 可选: ' + (opt.length > 0 ? opt.join(', ') : '（无）') : '');
+                    }).join('\n'),
+                    '',
+                    '想看某个工具的完整参数树（类型/描述/必填）：normify_help { topic: "tool:<工具名>" }，例如 "tool:normify_module_batch"。',
+                ].join('\n'),
             };
         case 'all':
             return {
@@ -108,4 +121,29 @@ export function topicReference(topic: HelpTopic, catalog: ToolCatalogEntry[] = [
                 ].join('\n'),
             };
     }
+}
+
+
+/** 单个工具的完整参数树（help 的 `tool:<name>` 主题）。 */
+export function toolReference(entry: ToolCatalogEntry | undefined): { title: string; text: string } {
+    if (entry === undefined)
+        return { title: '未知工具', text: '' };
+    const schema = (entry.parameters ?? {}) as { properties?: Record<string, { type?: string; description?: string; required?: boolean }>; required?: string[] };
+    const props = schema.properties ?? {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const lines = [
+        entry.name + '  [' + entry.behavior + ']',
+        entry.description,
+        '',
+        '参数（* = 必填）：',
+    ];
+    const keys = Object.keys(props);
+    if (keys.length === 0)
+        lines.push('  （无参数）');
+    for (const k of keys) {
+        const prop = props[k] ?? {};
+        lines.push('  ' + (required.has(k) ? '* ' : '  ') + k + ': ' + (prop.type ?? 'any') + (prop.description !== undefined ? ' — ' + prop.description : ''));
+    }
+    lines.push('', '提示：参数树由插件注册表实时生成，与运行时校验同源。');
+    return { title: entry.name + ' 参数树', text: lines.join('\n') };
 }

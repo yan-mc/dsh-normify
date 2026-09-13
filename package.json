@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-normify",
-  "version": "0.5.3",
-  "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（30 个工具 + normify-gen 技能 + 渲染数据集 + 伴随开发）。0.5.3：分主题 help、项目初始化通道、批量诊断因果链、API 直连引导。适配 DeepSeek Harness 0.1.5+ / DSHEAC AIO 桌面端。",
+  "version": "0.5.4",
+  "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（30 个工具 + normify-gen 技能 + 渲染数据集 + 伴随开发）。0.5.4：patch 空补丁拦截、refresh 无 git 降级、acceptance 报错具体化、help 支持 tool:<name> 参数树。适配 DeepSeek Harness 0.1.5+ / DSHEAC AIO 桌面端。",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -68,6 +68,6 @@
   "scripts": {
     "build": "bash scripts/build.sh",
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs"
+    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs"
   }
 }

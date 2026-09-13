@@ -195,6 +195,9 @@ export async function patchModule(projectDir: string, id: string, patch: Record<
     delete cleanPatch.expect_updated_at;
     const bodyOverride = typeof cleanPatch.body === 'string' ? cleanPatch.body : undefined;
     delete cleanPatch.body;
+    if (Object.keys(cleanPatch).length === 0 && bodyOverride === undefined) {
+        return { ok: false, dryRun: opts.dryRun === true, errors: [diag('error', 'args/empty-patch', '没有任何字段要改：patch 里至少要有一个字段（或传 body）', { module: id }, { got_keys: Object.keys(patch) }, ['把要改的字段放进 patch，如 { tags: ["a"] }；只想读的话用 normify_module_get'])], warnings, changed: [], detail: {} };
+    }
     const merged = applyPatch(existing, cleanPatch);
     errorsOut.push(...merged.errors);
     if (merged.module === null)
@@ -258,7 +261,13 @@ export async function batchWrite(projectDir: string, items: BatchItem[], mode: '
                 errorsOut.push(diag('error', 'module/not-found', 'patch 目标模块不存在：' + id, { module: id }, {}, []));
                 continue;
             }
-            const r = applyPatch(working.get(id)!, { ...(item.patch?.patch ?? {}) });
+            // 0.5.4：内层 patch 缺失/为空 = "返回成功但什么都没改"的静默 no-op（A/B 实测踩到），必须显式报错
+            const inner = item.patch?.patch;
+            if (inner === undefined || inner === null || typeof inner !== 'object' || Array.isArray(inner) || Object.keys(inner as Record<string, unknown>).length === 0) {
+                errorsOut.push(diag('error', 'args/invalid-patch', 'patch 模式要求 items[i] = { patch: { id, patch: { ...要改的字段 } } } —— 内层 patch 才是字段补丁；当前内层缺失或为空（若直接放行，会"返回 ok 但一个字段都没改"）', { module: id }, { got_keys: Object.keys(item.patch ?? {}), inner_patch: inner === undefined ? 'missing' : JSON.stringify(inner).slice(0, 80) }, ['改成 { patch: { id: "' + id + '", patch: { tags: ["..."] } } }']));
+                continue;
+            }
+            const r = applyPatch(working.get(id)!, { ...(inner as Record<string, unknown>) });
             errorsOut.push(...r.errors);
             if (r.module !== null) {
                 if (batchIds.has(r.module.id))
@@ -650,7 +659,8 @@ export async function refreshModules(projectDir: string, opts: RefreshOptions): 
     }
     const head = gitHead(opts.repoRoot);
     if (head.sha === null) {
-        return { ok: false, dryRun: opts.dryRun === true, errors: [diag('error', 'refresh/git-failed', head.error ?? '无法获取 git HEAD', { repoRoot: opts.repoRoot }, {}, [])], warnings, changed: [], detail: {}, refreshed, missing };
+        // 0.5.4：repoRoot 不是 git 仓库时不再硬失败 —— 指纹照常重算，revision 保持原值并记 warning
+        warnings.push(diag('warning', 'refresh/git-unavailable', '无法获取 git HEAD（' + (head.error ?? '未知原因') + '）：本次只重算 fingerprint/updated_at，revision 保持模块原值', { repoRoot: opts.repoRoot }, {}, ['在 repoRoot 下 git init && git commit 后重跑 refresh 即可写入真实 revision']));
     }
     const activate = opts.activate === true;
     const planned: { id: string; module: Module }[] = [];
@@ -692,7 +702,8 @@ export async function refreshModules(projectDir: string, opts: RefreshOptions): 
             continue;
         }
         m.fingerprint = fp.hash;
-        m.revision = head.sha;
+        if (head.sha !== null)
+            m.revision = head.sha;
         m.updated_at = new Date().toISOString();
         if (activate)
             m.state = 'active';

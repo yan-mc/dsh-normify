@@ -7,6 +7,37 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.5.4] - 2026-09-13
+
+本版修复**第二轮 A/B 对照实验**（题目：表格公式引擎 + CLI）暴露的 4 个**工具侧**缺陷。
+实验记录：工作区 `test-results/2026-09-13-ab2-formula-engine/`。
+
+### 修复
+
+1. **`mode:"patch"` 静默 no-op**（最危险的"假成功"）
+   `items:[{patch:{id, tags:[...]}}]`（内层 `patch` 缺失）会走 `applyPatch(module, {})` →
+   返回 `ok:true, count:1` 但**一个字段都没改**。现在内层 `patch` 缺失、为 `null`、非对象或空对象时，
+   直接报 **`args/invalid-patch`**，evidence 带 `got_keys` 与正确形状，`supportedFixes` 给出改写示例。
+   同时 `normify_module_patch` 传**空补丁**（含"只给 `expect_updated_at`"）报 **`args/empty-patch`**，不再静默通过。
+2. **`normify_module_refresh` 强依赖 git**
+   `repoRoot` 不是 git 仓库时以前直接 `refresh/git-failed` 失败（实测中 agent 只能 `git init` 才能激活）。
+   现在**降级**：`fingerprint` / `updated_at` 照常重算、`activate` 照常生效、`revision` 保持原值，
+   并给出 `refresh/git-unavailable` 警告（附"git init && commit 后重跑即可写入真实 revision"的修法）。
+3. **`change_open` 的 `acceptance` 报错笼统**
+   传 `{zh,en}` 双语对象时只得到一句"必须为非空字符串数组"。现在明确到**第 N 条**：
+   `acceptance 第 1 条不是非空字符串（收到 {"zh":"…","en":"…"}）：验收标准只接受纯字符串，不接受 {zh,en} 双语对象`，
+   并在参数描述里写明"需要双语请写 title/intent"。
+4. **`normify_help` 没有参数树**
+   `topic:"tools"` 现在每个工具都带 `必填: … | 可选: …`；新增 **`topic:"tool:<工具名>"`** 打印该工具的
+   完整参数树（`* 必填 / 类型 / 描述`，由注册表实时生成，与运行时校验同源）；未知工具报 `args/unknown-tool`。
+   实测里 AI 为确认 `mode=patch` 的嵌套形状去读了插件源码，这条主题正是为消灭该绕路而加。
+
+### 测试
+
+- 新增 `tests/regression-0.5.4.mjs`（21 项断言：patch 空补丁拦截 / refresh 无 git 降级 / 参数树 / acceptance 报错）；
+- `tests/regression-0.5.3.mjs` 的 `topic=tools` 断言适配"每行多了必填/可选摘要"；
+- `npm test` 现串联 5 套：`engine-e2e` / `companion-e2e` / `regression-0.5.2` / `-0.5.3` / `-0.5.4`。
+
 ## [0.5.3] - 2026-09-12
 
 本版全部来自一次**伴随编程 A/B 对照实验**（同一份规范、两个 AI：一个带插件走伴随流程、一个纯手写；

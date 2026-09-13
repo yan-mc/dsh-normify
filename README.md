@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.3-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.4-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
@@ -105,7 +105,25 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 3. 最新变化
 
-### v0.5.3 · 把「伴随编程实测」暴露的 4 个摩擦点修掉（当前版本）
+### v0.5.4 · 把"第二轮 A/B 实测"暴露的 4 个工具缺陷修掉（当前版本）
+
+第二轮 A/B 换了题目（**表格公式引擎 + CLI**，同一份规范、隐藏黑盒 88 项、外加**差分模糊测试**）。
+两组最终 B 88/88、A 87/88（差异只有一条 §5.2 语义）；这一版修的是**工具侧**新暴露的 4 个坑：
+
+- **`mode:"patch"` 的静默 no-op 被拦下**：原来 `items:[{patch:{id, tags:[...]}}]`（少一层包装）会返回
+  `ok:true, count:1` 却**一个字段都没改**——最危险的"假成功"。现在直接报 `args/invalid-patch`，
+  evidence 里给出收到的键与正确形状 `{patch:{id, patch:{...}}}`；单模块 `normify_module_patch` 传空补丁
+  同样报 `args/empty-patch`（只给 `expect_updated_at` 也不再静默通过）。
+- **`normify_module_refresh` 不再强依赖 git**：`repoRoot` 不是 git 仓库时，以前直接
+  `refresh/git-failed` 失败（实测中 AI 只能 `git init` 才能激活模块）。现在改成**降级**：指纹照常重算、
+  `state` 照常激活，`revision` 保持模块原值，并给出 `refresh/git-unavailable` 警告与修法。
+- **`change_open` 的 `acceptance` 报错具体化**：以前把 `{zh,en}` 写进 acceptance 只有一句笼统报错；
+  现在明确写出"**第 N 条不是非空字符串（收到 …）：验收标准只接受纯字符串**"，并提示双语描述写进 `title`/`intent`。
+- **`normify_help` 支持 `topic:"tool:<工具名>"`**：`tools` 主题现在每个工具都带**必填/可选**摘要，
+  新主题可按需打印**完整参数树**（类型 / 描述 / 必填，由注册表实时生成、与运行时校验同源）。
+  实测里 AI 为确认 `mode=patch` 的嵌套形状去读了插件源码——这条主题正是为了消灭这种绕路。
+
+### v0.5.3 · 把「伴随编程实测」暴露的 4 个摩擦点修掉
 
 这四个问题来自一次真实的 A/B 对照实验：两个 AI 用同一份规范写同一个后端，一个带插件走伴随流程、一个纯手写
 （最终代码在隐藏黑盒验收上都是 **42/42**）。插件组多交付了 41 模块 / 110 API / 10 层的结构数据，但也踩到了下面 4 个坑：
@@ -464,7 +482,7 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.2） |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.4） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略 |
 

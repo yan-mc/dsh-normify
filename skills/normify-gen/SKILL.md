@@ -97,7 +97,7 @@ normify-demo-repo/
 | `normify_check` | 设计前预检：拟建模块/依赖是否违反核心约束与架构规则 |
 | `normify_brief` | 开发指引：目标模块、契约、约束、影响面、建议、验收清单 |
 | `normify_change_open/update/list/close` | 开发变更日志（changes/，随结构目录回档）；close 强制 0 error |
-| `normify_help` | **分主题**速查：`fields`(字段) / `deps`(箭头与 API 直连) / `renders` / `flow`(伴随流程) / `tools` / `policy` / `errors` / `all`；未知主题报错并列出主题 |
+| `normify_help` | **分主题**速查：`fields`(字段) / `deps`(箭头与 API 直连) / `renders` / `flow`(伴随流程) / `tools`(含必填/可选) / `policy` / `errors` / `all` / **`tool:<工具名>`(完整参数树)**；未知主题报错并列出主题 |
 
 所有工具用 `project`（slug）或 `dir`（结构数据目录绝对路径）定位项目。
 
@@ -131,7 +131,7 @@ normify-demo-repo/
 1. `normify_change_open`：开一个变更（title / intent / modules{create,modify,delete} / acceptance），结构目录内留下 `changes/<id>.json`，可随工程回档。
 2. `normify_brief`：拿开发指引——目标模块与契约、影响面（谁依赖我）、架构规则、建议新增模块（含 id 与文件路径建议）、验收清单与收尾步骤。
 3. `normify_check`：把**拟建模块与拟加依赖**先预检（parent 推导、深度、环、policy 违规）；不通过就改设计，不要带病动手。
-4. `normify_module_batch`（或 upsert）建**计划态**模块：`state: planned`、`fingerprint: pending`、`source` 可以先指向尚未落地的文件；容器同轮用 `normify_layout_upsert` 写该层渲染数据。
+4. `normify_module_batch`（或 upsert）建**计划态**模块（patch 模式条目是**双层**结构 `{ patch: { id, patch: { ...字段 } } }`；0.5.4 起内层缺失会报 `args/invalid-patch`，不再静默 no-op）：`state: planned`、`fingerprint: pending`、`source` 可以先指向尚未落地的文件；容器同轮用 `normify_layout_upsert` 写该层渲染数据。
    - 一次批量写入是原子的：任意一条不合法，整批不落盘。
 
 ### 4.2 逐个模块实现（编码）

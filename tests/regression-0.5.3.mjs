@@ -38,7 +38,8 @@ ok('①a 默认返回 fields', h0.ok === true && h0.topic === 'fields' && /模�
 const hFlow = await call('normify_help', { topic: 'flow' })
 ok('①b topic=flow 返回伴随流程', hFlow.ok === true && /normify_project_init/.test(hFlow.reference) && /change_close/.test(hFlow.reference))
 const hTools = await call('normify_help', { topic: 'tools' })
-ok('①c topic=tools 列出全部工具', hTools.ok === true && hTools.reference.split('\n').length === tools.size, 'catalog=' + hTools.reference.split('\n').length + ' registered=' + tools.size)
+const listed = hTools.reference.split('\n').filter(l => /^normify_[a-z_]+ \[/.test(l)).length
+ok('①c topic=tools 列出全部工具（0.5.4 起每行还带必填/可选摘要）', hTools.ok === true && listed === tools.size, 'listed=' + listed + ' registered=' + tools.size)
 const hDeps = await call('normify_help', { topic: 'deps' })
 ok('①d topic=deps 讲 API 直连', hDeps.ok === true && /from_api/.test(hDeps.reference) && /to_api/.test(hDeps.reference))
 const hBad = await call('normify_help', { topic: 'nope' })

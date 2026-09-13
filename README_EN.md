@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.3-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.4-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
@@ -111,7 +111,29 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 ## 3. Release highlights
 
-### v0.5.3 — the four friction points found by a real companion-development A/B (current)
+### v0.5.4 — the four tool-side defects found by the second A/B run (current)
+
+Round 2 switched the project (a **spreadsheet formula engine + CLI**; same spec discipline, 88 hidden black-box
+checks plus **differential fuzzing**). Final scores: B 88/88, A 87/88 (the single gap being one §5.2 ordering rule).
+This release fixes the four *tool-side* issues that run exposed:
+
+- **`mode:"patch"` silent no-op is now rejected**: `items:[{patch:{id, tags:[...]}}]` (one nesting level short) used to
+  return `ok:true, count:1` while changing **nothing** — the worst kind of false success. It now fails with
+  `args/invalid-patch`, echoing the received keys and the correct shape `{patch:{id, patch:{...}}}`. A single-module
+  `normify_module_patch` with an empty patch now fails with `args/empty-patch` too (passing only `expect_updated_at`
+  no longer slips through).
+- **`normify_module_refresh` no longer hard-requires git**: with a non-git `repoRoot` it used to fail with
+  `refresh/git-failed` (the agent had to `git init` just to activate modules). It now degrades gracefully: fingerprints
+  are recomputed, state is still activated, `revision` keeps its previous value, and a `refresh/git-unavailable`
+  warning explains how to fix it.
+- **Clearer `change_open` acceptance errors**: putting a `{zh,en}` object into `acceptance` used to produce one vague
+  error; it now says which entry is wrong ("entry #N is not a non-empty string … acceptance only accepts plain
+  strings") and suggests putting localized text in `title`/`intent`.
+- **`normify_help` gained `topic:"tool:<name>"`**: the `tools` topic now lists required/optional params per tool, and
+  the new topic prints a full parameter tree (type / description / required), generated live from the registry and
+  therefore in sync with runtime validation.
+
+### v0.5.3 — the four friction points found by a real companion-development A/B
 
 These come from an actual A/B run: two AIs implemented the same backend spec, one with the plugin driving the
 companion flow, one writing plain code. Both scored **42/42** on a hidden black-box suite. The plugin side shipped an
@@ -434,7 +456,7 @@ node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (Chinese) |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | the generator skill (the AI's playbook) |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.2) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.4) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | contributing guide |
 | [`SECURITY.md`](SECURITY.md) | security policy |
 

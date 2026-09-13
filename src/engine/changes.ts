@@ -65,7 +65,22 @@ export function l1ValidateChange(data: unknown, id: string, where: string): {
     if (data.note !== undefined && typeof data.note !== 'string')
         errors.push(diag('error', 'change/note', 'note 必须为字符串', { change: id }, {}, []));
     if (!Array.isArray(data.acceptance) || data.acceptance.length === 0 || (data.acceptance as unknown[]).some(s => typeof s !== 'string' || s.trim() === '')) {
-        errors.push(diag('error', 'change/acceptance', 'acceptance 必须为非空字符串数组（验收清单）', { change: id }, {}, ['至少写一条可验证的验收标准']));
+        // 0.5.4：把"哪一条、错成什么样"讲清楚（A/B 实测中把 {zh,en} 写进 acceptance 只得到一句笼统报错）
+        let message = 'acceptance 必须是**纯字符串数组**（验收清单）';
+        let evidence: Record<string, unknown> = { received_type: typeof data.acceptance };
+        if (Array.isArray(data.acceptance)) {
+            if (data.acceptance.length === 0) {
+                message = 'acceptance 不能为空：至少写一条可验证的验收标准';
+                evidence = { length: 0 };
+            }
+            else {
+                const idx = (data.acceptance as unknown[]).findIndex(s => typeof s !== 'string' || s.trim() === '');
+                const bad = (data.acceptance as unknown[])[idx];
+                message = 'acceptance 第 ' + (idx + 1) + ' 条不是非空字符串（收到 ' + JSON.stringify(bad) + '）：验收标准只接受纯字符串，不接受 {zh,en} 双语对象';
+                evidence = { index: idx + 1, value: bad, expected: 'string' };
+            }
+        }
+        errors.push(diag('error', 'change/acceptance', message, { change: id }, evidence, ['改成 ["验收点 A", "验收点 B"] 这样的字符串数组；需要双语描述请写在 title / intent 里']));
     }
     else if (data.acceptance.length > 20) {
         errors.push(diag('error', 'change/acceptance-too-many', 'acceptance 最多 20 条', { change: id }, { count: data.acceptance.length }, []));
