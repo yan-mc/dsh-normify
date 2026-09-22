@@ -12,7 +12,7 @@ const plug = await import(PLUGIN)
 const tools = new Map()
 plug.apply({ tools: { register: (d) => tools.set(d.name, d) }, skills: { register: () => () => {} },
   logger: { info: () => {}, warn: () => {} }, effect: () => {}, on: () => {} },
-  { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8 })
+  { rootDir: tmpdir(), requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8 })
 const call = (n, a) => tools.get(n).execute(a ?? {})
 const hex = (s) => createHash('sha256').update(s).digest('hex')
 const A = (path, zh, en) => ({ protocol: 'rpc', path, description: { zh, en } })

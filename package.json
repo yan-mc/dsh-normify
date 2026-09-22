@@ -68,6 +68,6 @@
   "scripts": {
     "build": "bash scripts/build.sh",
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs"
+    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs && node tests/fix-issues-1-4.mjs"
   }
 }

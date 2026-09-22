@@ -45,8 +45,8 @@ frontmatter 字段（必填 9 个）：
 - `repository`：仅根模块，该树对应仓库的 http(s) URL（多树时每棵树各写各的）。
 - `state`：计划态 `planned` + `fingerprint: pending` 允许 source 尚未落地；实现后用 `normify_module_refresh({ ids, activate: true })` 转 active。`deprecated` 可带 `replacement` 指向替代模块。
 - `tags`：自由标签（≤12 个），用于检索/分组/开发指引。
-- `apis`：**仅叶子**。条目 = `{protocol, method?, path, description{zh,en}}`。protocol ∈ `http|ws|rpc|amqp|kafka|mysql|redis|file|grpc|graphql`；http 必须有大写 `method`，非 http 禁止 `method`。
-- `deps`：出向依赖箭头（只存源端）。条目 = `{kind, to, from_api?, to_api?, label?{zh,en}}`。kind ∈ `call|event|dataflow|reference`；`to` 为目标模块 id（**可跨树**）；`from_api` 只能是本模块 API 键（仅叶子）；`to_api` 只能是目标模块**自身** API 键。
+- `apis`：**仅叶子**。条目 = `{protocol, method?, path, description{zh,en}}`（`description` 各 ≤ 200 字符）。protocol ∈ `http|ws|rpc|amqp|kafka|mysql|redis|file|grpc|graphql`；http 必须有大写 `method`，非 http 禁止 `method`。
+- `deps`：出向依赖箭头（只存源端）。条目 = `{kind, to, from_api?, to_api?, label?{zh,en}}`（`label` 各 ≤ 30 字符）。kind ∈ `call|event|dataflow|reference`；`to` 为目标模块 id（**可跨树**）；`from_api` 只能是本模块 API 键（仅叶子）；`to_api` 只能是目标模块**自身** API 键。
 
 关键定义：
 
@@ -288,6 +288,8 @@ deps:
 | `dep/from-api-invalid` | from_api 不是本模块 API | 用本模块 apis 的键 |
 | `evidence/fingerprint-drift` | 数据过期 | 跑 normify_sync 计划增量重建 |
 | `structure/id-format` | id 非法 | 按段规则改名（uid 保持不变） |
+| `structure/id-reserved-segment` | id 末段用了保留段名 `index`（与父容器模块文件冲突） | 改用其他末段名（uid 保持不变） |
+| `structure/name-too-long` / `structure/description-too-long` / `api/description-too-long` / `dep/label-too-long` | 文案超限（name 60 / 模块 desc 500 / API desc 200 / label 30） | 精简文案到上限内 |
 | `state-invalid` / `replacement-*` | state/replacement 非法 | 按 §4.4 与字段规则修正 |
 | `structure/planned-source-missing` | 计划态 source 未落地 | 实现文件后 `normify_module_refresh({ids,activate:true})` |
 | `structure/leaf-too-coarse` / `structure/shallow-hierarchy` | 结构过粗/过浅 | 继续拆分（§3） |

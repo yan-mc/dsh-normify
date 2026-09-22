@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { sha256Text } from './store.js';
 import { renderTemplate } from './template.js';
@@ -71,7 +71,20 @@ export async function renderProject(projectDir: string, opts: RenderOptions): Pr
         theme: opts.theme ?? '',
     };
     const html = renderTemplate(treeText, { name, stats, compiledAt: summary.compiledAt, treeSha12: summary.treeSha12 });
-    const out = join(projectDir, opts.out && opts.out.trim() !== '' ? opts.out : 'normify.html');
+    const requested = opts.out && opts.out.trim() !== '' ? opts.out.trim() : 'normify.html';
+    const out = resolve(projectDir, requested);
+    const rel = relative(projectDir, out);
+    if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+        return {
+            ok: false,
+            htmlPath: null,
+            bytes: 0,
+            sha256: null,
+            summary,
+            errors: [diag('error', 'render/out-invalid', 'out 必须是结构数据目录内的相对文件名（工具文档口径："输出文件名"）', { out: requested }, {}, ['改用纯文件名，如 normify.html'])],
+            warnings,
+        };
+    }
     try {
         await writeFile(out, html, 'utf8');
     }

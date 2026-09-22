@@ -17,6 +17,12 @@ export function splitId(id: string): string[] | null {
 export function isValidId(id: string): boolean {
     return splitId(id) !== null;
 }
+/** 保留末段名：与「父容器的模块文件」解析到同一路径（如 demo.order（容器）与 demo.order.index（叶子）同为 demo/order/index.md）。 */
+export const RESERVED_LAST_SEGMENTS = new Set(['index']);
+export function hasReservedLastSegment(id: string): boolean {
+    const segs = splitId(id);
+    return segs !== null && segs.length > 1 && RESERVED_LAST_SEGMENTS.has(segs[segs.length - 1]);
+}
 /** 父 id = 去掉最后一段；单段（树名/根）的父为 null。 */
 export function deriveParent(id: string): string | null {
     const segs = splitId(id);
