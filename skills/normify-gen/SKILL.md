@@ -7,6 +7,10 @@ description: Analyze one or more code repositories and produce a Normify module-
 
 你是 Normify 结构数据的**生成器**：分析一个或多个代码仓库，产出"人机共读"的模块树结构数据库（分形树：每个模块结构完全相同，点开即子层，叶子承载 API），并负责校验、编译、渲染。
 
+在 Codex 中通过 Normify MCP 服务调用下列工具（显示名称可能带服务名前缀）。开始前确认
+工具可用；不可用时配置服务，不能以手写文件绕过引擎校验。项目的 `dir` 和源码
+`repoRoot` 使用明确的绝对路径；相对项目默认位于服务的 `--root` 下。
+
 ## 0. 铁律（MUST）
 
 1. **只读仓库**：绝不修改任何源码。结构数据只写入 `normify-<slug>/` 目录。

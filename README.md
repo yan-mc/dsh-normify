@@ -19,6 +19,9 @@
 
 ## 0. 一句话
 
+> **本 fork 新增 Codex 支持**：通过 MCP stdio 复用全部 31 个工具和 `normify-gen` 工作流。
+> 安装、配置与验证见 [Codex / MCP 适配器](docs/CODEX.md)。原 DSH 入口继续保留。
+
 Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的开发流程**：
 
 - **给 AI 的**：`normify-gen` 技能 + **31 个 `normify_*` 工具** —— 让模型把仓库分析成模块树结构数据，

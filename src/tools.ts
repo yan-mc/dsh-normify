@@ -28,7 +28,7 @@ export interface ToolEnv {
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
 interface SchemaNode {
-    type?: string;
+    type?: string | string[];
     description?: string;
     required?: boolean | string[];
     properties?: Record<string, SchemaNode>;
@@ -59,7 +59,7 @@ interface ToolService {
 }
 
 /** 交给 tools.register 的注册对象。 */
-interface ToolRegistration {
+export interface ToolRegistration {
     name: string;
     description: string;
     behavior: ToolBehavior;
@@ -459,7 +459,7 @@ function depParam(): SchemaNode {
                 to: { type: 'string', description: '目标模块 id', required: true },
                 from_api: { type: 'string', description: '可选：本模块某 API 键（仅叶子）', required: false },
                 to_api: { type: 'string', description: '可选：目标模块自身某 API 键', required: false },
-                label: l10nParam('箭头标签'),
+                label: l10nOptParam('箭头标签'),
             },
             required: ['kind', 'to'],
         },
@@ -534,7 +534,7 @@ function moduleParams(): SchemaNode {
         properties: {
         uid: str('8 位小写 hex 随机串（不变标识，全项目唯一）'),
         id: str('路径式 id：小写段点分隔，含树名段 ≤ 12 段，如 demo.order.checkout.payment'),
-        parent: str('父模块 id（= id 去掉最后一段）；根模块传 JSON null 或字符串 "null"'),
+        parent: { ...str('父模块 id（= id 去掉最后一段）；根模块传 JSON null 或字符串 "null"'), type: ['string', 'null'] },
         name: l10nParam('模块名（≤60 字符）'),
         description: l10nParam('功能介绍（≤500 字符，刻意精炼）'),
         source: sourceParam(),
@@ -574,7 +574,7 @@ function diagnosticsOut(errors: Diagnostic[], warnings: Diagnostic[]): { ok: boo
         summary: errors.length + ' error / ' + warnings.length + ' warning',
     };
 }
-export function registerTools(ctx: Context, env: ToolEnv): void {
+export function registerTools(ctx: Context | { tools?: ToolService }, env: ToolEnv): void {
     const toolCatalog: ToolCatalogEntry[] = [];
     const register = <A>(key: string, def: ToolDef, execute: (args: A) => Promise<unknown>): void => {
         toolCatalog.push({ name: key, description: def.description, behavior: def.behavior, parameters: def.parameters });

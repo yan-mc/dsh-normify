@@ -19,6 +19,9 @@
 
 ## 0. TL;DR
 
+> **Codex support in this fork:** an MCP stdio adapter exposes all 31 existing tools and the
+> `normify-gen` workflow. See [Codex / MCP setup](docs/CODEX.md). The DSH entry point is preserved.
+
 Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a development workflow written for AI agents**:
 
 - **For the AI**: a `normify-gen` skill plus **30 `normify_*` tools** — the model turns a repository into a module-tree
