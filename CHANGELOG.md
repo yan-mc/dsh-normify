@@ -7,6 +7,39 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.5.5] - 2026-10-17
+
+本版只做一件事：**放开 DSH 0.2.x 的兼容声明**。0.5.4 的 `engines.dsh` 与两条 peer 上限停在 `<0.2.0`，
+用户升级到 DSH `0.2.1-rc.2` 后插件被判为不兼容、无法加载。
+
+### 变更
+
+1. `engines.dsh`：`>=0.1.5-rc.2 <0.2.0` → `>=0.1.5-rc.2 <0.3.0`
+2. `peerDependencies` 的 `@deepseek-ai/dsh-tools` / `@deepseek-ai/dsh-skill`：上限同样放宽到 `<0.3.0`
+3. README / README_EN 的兼容性表与 DSH 徽章同步
+
+### 依据（为什么只是声明问题）
+
+逐项对比 DSH `0.1.7-rc.2` 与 `0.2.1-rc.2` 的 `@deepseek-ai/dsh-tools` / `@deepseek-ai/dsh-skill` 类型声明：
+
+| 检查项 | 结论 |
+| --- | --- |
+| 插件实际 import 的 dsh 包 | 只有 `@deepseek-ai/cordis`（`~4.0.5`，满足 `>=4.0.0-rc <5`） |
+| `ctx.tools.register` | 两版一致 |
+| `tools/post-execute` 事件 | 两版都存在 |
+| `ctx.skills.register({ name, description, content })` | `dsh-skill` 的 `index.d.ts` 两版**逐字节相同** |
+| 唯一的类型差异 | `ToolPresentationMode` 去掉 `'both'`；插件未使用该字段 |
+
+结论：插件侧没有依赖任何在 0.2.x 中被改动的 API，不兼容完全来自版本范围声明。
+
+### 备注
+
+`dsh-tools` / `dsh-skill` 这两条 peer 依赖目前是**声明了但未被引用**（插件只 import cordis）。
+它们继续保留是为了与既有安装方式一致，但每次 DSH 大版本升级都会再次误判不兼容。
+若后续确认无宿主需要，可考虑直接移除，或改为不设上限。
+
+
+
 ## [0.5.4] - 2026-09-13
 
 本版修复**第二轮 A/B 对照实验**（题目：表格公式引擎 + CLI）暴露的 4 个**工具侧**缺陷。

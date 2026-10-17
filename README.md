@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/version-0.5.4-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
-  <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
+  <img src="https://img.shields.io/badge/DSH-0.1.5~0.2.1-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
   <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
 </p>
@@ -456,7 +456,7 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 
 | 项 | 要求 |
 | --- | --- |
-| DSH | `0.1.5-rc.2`（peer：`@deepseek-ai/cordis ^4`；`dsh-tools` / `dsh-skill` 可选） |
+| DSH | `0.1.5-rc.2` ~ `0.2.1-rc.2`（peer：`@deepseek-ai/cordis ^4`；`dsh-tools` / `dsh-skill` 可选；0.2.x 兼容自 0.5.5 起） |
 | DSHEAC AIO | 6.9.x（profile `web-desktop`） |
 | Node.js | ≥ 18 |
 
