@@ -55,7 +55,7 @@ cd dsh-normify && npm install && npm run build && npm pack
 
 ### 📚 文档
 
-- [README](README.md) ｜ [English](README_EN.md) ｜ [正式规范](docs/SPEC.zh-CN.md) ｜ [生成器技能](skills/normify-gen/SKILL.md) ｜ [变更日志](CHANGELOG.md)
+- [README](../README.md) ｜ [English](../README_EN.md) ｜ [正式规范](SPEC.zh-CN.md) ｜ [生成器技能](../skills/normify-gen/SKILL.md) ｜ [变更日志](../CHANGELOG.md)
 
 ## 📦 安装：从本 Release 直接下载
 
@@ -76,4 +76,4 @@ curl -L -o dsh-external-dsh-normify-0.5.1.tgz \
 | 体积 | 188 668 B（83 个文件） |
 | SHA-256 | `5ef29340a751db9f0b0ac752114f52d3cceeb7a9a0716d2c64ac116d2db0c7bb` |
 
-装完之后的 profile 登记方式（`dependencies` + `dsh.profile.bundles`）见 [README「安装」](README.md)。
+装完之后的 profile 登记方式（`dependencies` + `dsh.profile.bundles`）见 [README「安装」](../README.md)。
