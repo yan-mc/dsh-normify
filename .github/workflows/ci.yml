@@ -32,6 +32,13 @@ jobs:
           fi
           echo "portability guard ok"
 
+      - name: Core/CLI boundary
+        run: node scripts/check-core-boundary.mjs
+
+      - name: CLI smoke (31 tools)
+        run: |
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; const out = execFileSync(process.execPath, ['lib/cli/index.js', 'tools'], { encoding: 'utf8' }); const n = JSON.parse(out).length; if (n !== 31) throw new Error('expected 31 tools, got ' + n); console.log('CLI tools ok:', n)"
+
       - name: Sanity checks
         run: |
           node --check lib/dsh/index.js

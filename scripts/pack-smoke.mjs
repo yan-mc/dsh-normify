@@ -511,18 +511,22 @@ function tierStatic() {
     }
   }
 
-  // ---- S5: files 覆盖运行时必需文件 ----
+  // ---- S5: files 覆盖运行时必需文件（main/types 由 package.json 派生，适配 core/dsh 分层） ----
+  const normRel = (x) => String(x ?? '').replace(/^\.\//, '').replace(/\\/g, '/')
+  const requiredFiles = [...REQUIRED_RUNTIME_FILES]
+  if (typeof pkg.main === 'string' && pkg.main.trim() !== '') requiredFiles.unshift(normRel(pkg.main))
+  if (typeof pkg.types === 'string' && pkg.types.trim() !== '') requiredFiles.push(normRel(pkg.types))
   const files = Array.isArray(pkg.files) ? pkg.files : null
   if (files === null) { fail('static', 'files', 'package.json 未声明 files[]（发布包会包含所有文件）'); }
   else {
     const missingOnDisk = []
     const notCovered = []
-    for (const rel of REQUIRED_RUNTIME_FILES) {
+    for (const rel of [...new Set(requiredFiles)]) {
       if (!exists(join(root, rel))) missingOnDisk.push(rel)
       else if (!ALWAYS_PACKED.has(rel) && !coversByFiles(files, rel)) notCovered.push(rel)
     }
     if (missingOnDisk.length > 0) fail('static', 'files/exists', `运行时必需文件缺失：${missingOnDisk.join(', ')}`)
-    else pass('static', 'files/exists', `运行时必需文件齐全（${REQUIRED_RUNTIME_FILES.length} 项）`)
+    else pass('static', 'files/exists', `运行时必需文件齐全（${new Set(requiredFiles).size} 项，含 main/types`)
     if (notCovered.length > 0) fail('static', 'files/cover', `files[] 未覆盖：${notCovered.join(', ')}`)
     else pass('static', 'files/cover', `files[] 覆盖全部运行时必需文件`)
     // 不该进包的目录（避免把源码/测试/文档拖进发行物）
@@ -534,15 +538,17 @@ function tierStatic() {
   // ---- S6: 版本单一来源 ----
   const versions = []
   versions.push(['package.json', pkg.version])
-  const srcIndex = join(root, 'src', 'index.ts')
-  if (exists(srcIndex)) {
-    const m = /dsh-normify\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(readFileSync(srcIndex, 'utf8'))
-    if (m) versions.push(['src/index.ts', m[1]])
+  const verRe = /dsh-normify\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/
+  for (const absSrc of listFilesRec(join(root, 'src'))) {
+    if (!absSrc.endsWith('.ts')) continue
+    const m = verRe.exec(readFileSync(absSrc, 'utf8'))
+    if (m) { versions.push(['src/' + relative(join(root, 'src'), absSrc).replace(/\\/g, '/'), m[1]]); break }
   }
-  const libIndex = join(root, 'lib', 'index.js')
-  if (exists(libIndex)) {
-    const m = /dsh-normify\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(readFileSync(libIndex, 'utf8'))
-    if (m) versions.push(['lib/index.js(构建产物)', m[1]])
+  const mainRel = typeof pkg.main === 'string' ? normRel(pkg.main) : ''
+  const libEntry = mainRel !== '' ? join(root, mainRel) : join(root, 'lib', 'index.js')
+  if (exists(libEntry)) {
+    const m = verRe.exec(readFileSync(libEntry, 'utf8'))
+    if (m) versions.push([mainRel + '(构建产物)', m[1]])
   }
   const changelog = join(root, 'CHANGELOG.md')
   if (exists(changelog)) {
@@ -554,8 +560,8 @@ function tierStatic() {
   const distinct = [...new Set(versions.map(([, v]) => v))]
   if (distinct.length === 1) pass('static', 'version', `版本单一来源一致：${distinct[0]}`, versions.map(([k, v]) => `${k}=${v}`).join(' | '))
   else fail('static', 'version', `版本漂移：${distinct.join(' vs ')}`, versions.map(([k, v]) => `${k}=${v}`).join(' | '))
-  if (exists(libIndex) && versions.some(([k, v]) => k === 'lib/index.js(构建产物)' && v !== pkg.version)) {
-    fail('static', 'version/lib-stale', `lib/ 构建产物仍是旧版本（需 npm run build）`, `package.json=${pkg.version}，lib/index.js=${versions.find(([k]) => k.includes('lib/'))[1]}`)
+  if (exists(libEntry) && versions.some(([k, v]) => k.endsWith('(构建产物)') && v !== pkg.version)) {
+    fail('static', 'version/lib-stale', 'lib/ 构建产物版本与 package.json 不一致（需重新 build）', `package.json=${pkg.version}，${versions.find(([k]) => k.endsWith('(构建产物)'))?.join('=')}`)
   }
 
   // ---- S7: lib 新鲜度（逐文件映射：src/x.ts → lib/x.js / lib/types/x.d.ts） ----
@@ -617,7 +623,7 @@ function tierStatic() {
       if (list === null) skip('static', 'tgz/contents', '系统无 tar，跳过 tgz 内容检查')
       else {
         const inner = list.map((p) => p.replace(/^package\//, ''))
-        const mustHave = ['lib/index.js', 'lib/types/index.d.ts', 'skills/normify-gen/SKILL.md', 'vendor/schemastery/lib/index.mjs', 'cordis.patch.yml', 'package.json']
+        const mustHave = [...new Set([mainRel, normRel(pkg.types), 'skills/normify-gen/SKILL.md', 'vendor/schemastery/lib/index.mjs', 'cordis.patch.yml', 'package.json'].filter(Boolean))]
         const missing = mustHave.filter((p) => !inner.includes(p))
         if (missing.length > 0) fail('static', 'tgz/contents', `tgz 缺少运行时文件：${missing.join(', ')}`)
         else pass('static', 'tgz/contents', `tgz 含全部运行时文件（${list.length} 项）`)
@@ -786,7 +792,9 @@ async function tierContract() {
   const skills = []
   ctxReal.set('skills', { register: (spec) => { skills.push(spec); return () => {} } })
 
-  const pluginEntry = join(c.repoRoot, 'lib', 'index.js')
+  const repoPkg = readJson(join(c.repoRoot, 'package.json'))
+  const repoMain = String(repoPkg.main ?? './lib/index.js').replace(/^\.\//, '').replace(/\\/g, '/')
+  const pluginEntry = join(c.repoRoot, repoMain)
   if (!exists(pluginEntry)) return fail('contract', 'plugin', `缺少构建产物：${pluginEntry}（先 npm run build）`)
   let plug
   try { plug = await awaitImport(pluginEntry) } catch (e) {
