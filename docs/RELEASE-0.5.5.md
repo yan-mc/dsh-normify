@@ -40,14 +40,18 @@ Phase 0「P0 止血」版本：不新增功能，只做三件事 —— 兼容�
 - 修复 HTML `<title>` 转义与 `/s+/g` → `/\s+/g` 正则；JSON `<` 转义保持。
 - 写盘统一原子写（tmp + rename），中断不留半文件。
 
-### ✅ 验证（发布前填写）
+### ✅ 验证（2026-11-03 实机）
 
 | 项目 | 结果 |
 | --- | --- |
-| `npm test`（engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 + 0.5.5 新增用例） | [待发布填写] |
-| `tsc -p tsconfig.json`（strict / declaration） | [待发布填写] |
-| `node ci-contract-check.cjs`（31 工具契约） | [待发布填写] |
-| DSH `0.2.1-rc.5`：`plugin_manager` 安装 + 新会话 31 工具可见 | [待发布填写] |
+| `npm test`（engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 + 0.5.5 新增用例，共 6 套） | **PASS**（独立 worktree 复跑 2.3s，全绿） |
+| `tsc -p tsconfig.json`（strict / declaration） | **PASS**（exit 0） |
+| `node ci-contract-check.cjs`（31 工具契约） | **PASS**（bundle + tool-name contract ok） |
+| `node scripts/pack-smoke.mjs --all --strict`（P0 验收入口） | **PASS 42 / FAIL 0 / WARN 0**（5.4s） |
+| DSH `0.2.1-rc.5`：`pnpm pack` → 临时 DSH_HOME profile → `dsh plugin add <tgz>` → `dump-config` 含 dsh-normify 层 → headless mount 无错误 | **PASS**（engines 门禁解除；进入 MISSING_CREDENTIAL 阶段 = 插件全部 mount 成功） |
+| 真实 `ToolRuntime` 契约加载（dsh-tools@0.2.1-rc.5 + cordis@4.0.5） | **PASS**（31 工具全部可见；parameters/output.schema 通过 0.2.1 JSON Schema 子集校验；skill normify-gen 注册成功） |
+
+修复前后对照（审计期 12 个信号）：`git --output` 注入、`render.out` 穿越、`receipt` 自哈希、`index` 段 id、空 batch、孤儿 upsert、坏文件读、删 policy 后环检测、delete 型 change 死锁、`<title>` 注入、`/s+/g` 全部修复；`fingerprint` 越界收敛为"`../..` 已拒、显式 repoRoot 仍可算"（残余低危，0.6.0 收口）。
 
 ### 📦 安装（DSH 0.2.x）
 
@@ -59,13 +63,13 @@ dsh plugin --profile <profile> add <dsh-normify 包目录或 .tgz 的绝对路�
 
 装完请**新开一个会话**（工具列表在会话启动时快照）。详见 [README「安装」](../README.md#5-安装)。
 
-### 📎 附件（发布后填写）
+### 📎 附件
 
 | 项 | 值 |
 | --- | --- |
 | 附件 | `dsh-external-dsh-normify-0.5.5.tgz` |
-| 体积 | [待发布填写] B |
-| SHA-256 | `[待发布填写]` |
+| 体积 | 219,798 B |
+| SHA-256 | `014e1b26479c7f15cf2fa11a7a6ef5dae21e2bc9e6f286b5c80af96c8b1e51f2` |
 
 ### 🙏 致谢
 
