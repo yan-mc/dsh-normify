@@ -1,6 +1,6 @@
 # 兼容性矩阵（COMPATIBILITY）
 
-**当前结论：DSH `0.2.1-rc.5` 已由 `node scripts/pack-smoke.mjs --all --strict` 实测 PASS（0 FAIL / 0 WARN）；DSH 0.1.x 不支持。**
+**当前结论：插件 `0.6.0` 在 DSH `0.2.1-rc.5` 上已由 `node scripts/pack-smoke.mjs --all --strict` 实测 PASS（PASS 43 / FAIL 0 / WARN 0）；DSH 0.1.x 不支持。**
 
 > 本文件是“插件版本 × DSH 版本 × 验证状态”的唯一矩阵。更新时间：2026-11-03。
 > 重新验证命令见 §3；DSH 换 minor 时必须重跑并更新本表（政策见 [MIGRATION.md](MIGRATION.md) §5）。
@@ -11,7 +11,7 @@
 | --- | --- | --- | --- | --- |
 | `0.2.1-rc.5` | `0.5.5`（P0 止血） | ✅ **已验证** | `pack-smoke --all --strict`：PASS 42 / FAIL 0 / WARN 0；`pnpm pack` → 临时 DSH_HOME profile → `dsh plugin add` → dump-config 含插件层 → headless mount 无错误；真实 ToolRuntime 加载 31 工具 | `engines.dsh: ">=0.2.1-rc.1 <0.3.0"` |
 | `0.2.x`（`>=0.2.1-rc.1 <0.3.0`） | `0.5.5+` | ✅ 支持（声明区间） | engines 区间；具体 rc 版本以 pack-smoke 重跑为准 | 只支持当前 DSH 线 |
-| `0.2.1-rc.5` | `0.6.0` | 🚧 发布候选（发布前跑 pack-smoke --all） | `npm test`（6 套）＋ `pack-smoke --all`；发布前以 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 为准 | CLI + 结构 SBOM；工具名/数据格式不变 |
+| `0.2.1-rc.5` | `0.6.0` | ✅ **已验证** | `pack-smoke --all --strict`：PASS 43 / FAIL 0 / WARN 0（static 15 / contract 18 / boot 8）；tgz 266,546 B；版本单源 0.6.0 | 结构数据 v1 不变，无迁移 | `npm test`（6 套）＋ `pack-smoke --all`；发布前以 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 为准 | CLI + 结构 SBOM；工具名/数据格式不变 |
 | `< 0.2.1-rc.1` 的 0.1.x | 任意 | ❌ **不支持** | 版本门禁 `incompatible-version` 会拒绝安装/启用 | 0.1.x 请留在插件 `0.5.4` |
 | `>= 0.3.0` | 任意 | ❌ 未声明 | engines 上限 `<0.3.0` 会拒绝 | 需发布适配 0.3 的新版本 |
 | Node.js `< 18` | — | ❌ 不支持 | `engines.node: ">=18"` | — |
