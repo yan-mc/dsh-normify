@@ -7,6 +7,16 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.7.1] - 2026-11-03
+
+补丁版：修复 issue #4 的文案长度校验一致性问题（工具面/数据格式不变，无迁移）。
+
+- **诊断码前缀修正**：`checkL10n` 支持 `codePrefix`——模块=structure / API=api / 依赖=dep；`api/description-*` 与 `dep/label-*` 6 个码不再不可达，旧的 `structure/label-too-long` 不再出现。
+- **宽松模式统一**：`requireBilingual:false` 时四类文案问题（name/description/api.description/dep.label）统一降级为 warning；L1 对“内容类错误（empty/too-long）”仍返回模块（结构性错误照旧阻断），避免模块被丢后误报 `api/leaf-missing`。
+- **写入仍零容忍**：写路径调用点改为“任意 L1 error 即拒绝”，批量原子性不变。
+- **文档/诊断表**：`reference.ts` 诊断口径修正为四个字段四种上限（name 60 / description 500 / api.description 200 / dep.label 30）；`gen-diagnostics` 支持 `@diag-codes` 注解，DIAGNOSTICS 扩到 235 码；references/format.md 补上限。
+- **测试**：regression-0.5.5 增补 ⑩a–⑩d（strict error / loose warning / 旧码消失 / 模块不丢失）。
+
 ## [0.7.0] - 2026-11-03
 
 Phase 2「形态升级」：默认工具面切换为 7 原语（breaking，配 legacyTools 过渡），补齐评测与市场分发材料。

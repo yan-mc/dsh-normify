@@ -246,7 +246,8 @@ if (STDOUT) {
 if (CHECK) {
     let existing = '';
     try { existing = readFileSync(OUT, 'utf8'); } catch { /* missing */ }
-    if (existing !== md) {
+    const normalize = (v) => v.replace(/\r\n/g, String.fromCharCode(10));
+    if (normalize(existing) !== normalize(md)) {
         process.stderr.write('docs/DIAGNOSTICS.md 已过期：请运行 node scripts/gen-diagnostics.mjs 重新生成。\n');
         process.exit(1);
     }

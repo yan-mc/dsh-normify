@@ -15,6 +15,7 @@
 | `0.2.x`（`>=0.2.1-rc.1 <0.3.0`） | `0.5.5+` | ✅ 支持（声明区间） | engines 区间；具体 rc 版本以 pack-smoke 重跑为准 | 只支持当前 DSH 线 |
 | `0.2.1-rc.5` | `0.6.0` | ✅ **已验证** | `pack-smoke --all --strict`：PASS 43 / FAIL 0 / WARN 0（static 15 / contract 18 / boot 8）；tgz 267,045 B（tag 重建）；版本单源 0.6.0；`npm test`（6 套）全绿 | 结构数据 v1 不变，无迁移；工具名/数据格式不变 |
 | `0.2.1-rc.5` | `0.7.0` | ✅ **已验证**（默认 7 原语；legacyTools 过渡） | `pack-smoke --all --strict`：PASS 43 / FAIL 0 / WARN 0（static 15 / contract 18 / boot 8）；platform-contract 25/25（7 原语/legacy/full 三模式）；tgz 272,967 B sha256 `4609994c…`；版本单源 0.7.0 | 默认 7 原语；`legacyTools:true` → 额外 31 旧名；`toolset:"full"` → 31 旧工具 |
+| `0.2.1-rc.5` | `0.7.1` | ✅ **已验证**（issue #4 修复；工具面/数据格式不变） | `pack-smoke --all --strict`；6 套回归 + core-unit + platform-contract + perf + eval | 从 0.7.0 升级无需迁移 |
 | `< 0.2.1-rc.1` 的 0.1.x | 任意 | ❌ **不支持** | 版本门禁 `incompatible-version` 会拒绝安装/启用 | 0.1.x 请留在插件 `0.5.4` |
 | `>= 0.3.0` | 任意 | ❌ 未声明 | engines 上限 `<0.3.0` 会拒绝 | 需发布适配 0.3 的新版本 |
 | Node.js `< 18` | — | ❌ 不支持 | `engines.node: ">=18"` | — |
