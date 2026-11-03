@@ -88,6 +88,23 @@ const dynamic = new Map();  // label -> { label, expr, severity:Set, sites }
 const unparsed = [];
 
 for (const file of walk(SRC_CORE)) {
+    // 显式枚举码：用于由参数决定前缀（codePrefix）等静态分析展开不了的诊断码。
+    {
+        const noteRe = /@diag-codes\s+([^*\n]+)/g;
+        const text0 = readFileSync(file, 'utf8');
+        const lineOf0 = (idx) => text0.slice(0, idx).split('\n').length;
+        let nm;
+        while ((nm = noteRe.exec(text0)) !== null) {
+            for (const code of nm[1].trim().split(/\s+/)) {
+                if (!/^[a-z]+\/[a-z0-9-]+$/.test(code)) continue;
+                const entry = codes.get(code) ?? { code, severity: new Set(), sites: [], message: null };
+                entry.severity.add('error');
+                entry.sites.push({ file: relative(ROOT, file).replace(/\\/g, '/'), line: lineOf0(nm.index) });
+                if (entry.message === null) entry.message = '（@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning）';
+                codes.set(code, entry);
+            }
+        }
+    }
     const rel = relative(ROOT, file).replace(/\\/g, '/');
     const text = readFileSync(file, 'utf8');
     const lineAt = (idx) => text.slice(0, idx).split('\n').length;

@@ -173,7 +173,7 @@ function applyPatch(existing: Module, patch: Record<string, unknown>): { module:
     }
     data.updated_at = typeof patch.updated_at === 'string' ? patch.updated_at : new Date().toISOString();
     const r = l1Validate(data, 'patch:' + existing.id);
-    if (r.module === null)
+    if (r.module === null || r.errors.length > 0)
         return { module: null, errors: r.errors };
     return { module: r.module, errors: [] };
 }
@@ -259,9 +259,9 @@ export async function batchWrite(projectDir: string, items: BatchItem[], mode: '
                 fm.updated_at = new Date().toISOString();
             const r = l1Validate(fm, 'batch:' + String(fm.id ?? '?'));
             errorsOut.push(...r.errors);
-            if (r.module === null && r.errors.length > 0)
+            if (r.errors.length > 0)
                 droppedByL1.set(String(fm.id ?? '?'), r.errors[0]);
-            if (r.module !== null) {
+            if (r.module !== null && r.errors.length === 0) {
                 if (batchIds.has(r.module.id))
                     errorsOut.push(diag('error', 'module/batch-duplicate', '同一批次中模块 id 重复', { module: r.module.id }, {}, []));
                 batchIds.add(r.module.id);

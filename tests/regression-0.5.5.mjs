@@ -220,6 +220,31 @@ ok('⑨h render', pRender.ok === true && typeof pRender.bytes === 'number')
 const pChange = await P('normify_change')({ op: 'open', dir: PDIR, title: L('原语变更', 'primitive change'), intent: L('测试', 'test'), modules: {}, acceptance: ['ok'] })
 ok('⑨i change open', pChange.ok === true, JSON.stringify(pChange.errors ?? pChange.error ?? '').slice(0, 120))
 
+console.log('\n== ⑩ 文案长度校验一致性（issue #4）==')
+const L10N = join(work, 'normify-l10n').replace(/\\/g, '/')
+mkdirSync(join(L10N, 'modules', 'demo'), { recursive: true })
+const rootFm = { uid: 'aa11bb22', id: 'demo', parent: null, name: L('演示', 'Demo'), description: L('根', 'root'), source: [], revision: '0'.repeat(40), updated_at: NOW, fingerprint: 'pending', state: 'planned' }
+writeFileSync(join(L10N, 'modules', 'demo', 'index.md'), core.serializeModule(rootFm, ''), 'utf8')
+const apiFm = { ...fm('demo.api', 'demo', ['src/a.ts'], [{ protocol: 'rpc', path: 'x', description: L('a'.repeat(250), 'b'.repeat(250)) }]) }
+writeFileSync(join(L10N, 'modules', 'demo', 'api.md'), core.serializeModule(apiFm, ''), 'utf8')
+const depFm = { ...fm('demo.dep', 'demo', ['src/b.ts'], []), deps: [{ kind: 'call', to: 'demo.api', label: L('短', 'x'.repeat(40)) }] }
+writeFileSync(join(L10N, 'modules', 'demo', 'dep.md'), core.serializeModule(depFm, ''), 'utf8')
+const strictVal = await call('normify_validate', { dir: L10N })
+const strictCodes = JSON.stringify(strictVal.errors ?? [])
+ok('⑩a API 描述超长产生 api/description-too-long', /api\/description-too-long/.test(strictCodes), strictCodes.slice(0, 120))
+ok('⑩b dep label 超长产生 dep/label-too-long', /dep\/label-too-long/.test(strictCodes), strictCodes.slice(0, 120))
+ok('⑩c 不再出现错误的 structure/label-too-long', !/structure\/label-too-long/.test(strictCodes))
+const plugLoose = await import(PLUGIN)
+const toolsLoose = new Map()
+plugLoose.apply({ tools: { register: (d) => toolsLoose.set(d.name, d) }, skills: { register: () => () => {} },
+  logger: { info: () => {}, warn: () => {} }, effect: () => {}, on: () => {} },
+  { rootDir: '.', requireBilingual: false, devCompanionReminder: false, devCompanionReminderAfter: 8, toolset: 'full' })
+const looseVal = await (toolsLoose.get('normify_validate').execute({ dir: L10N }))
+const looseWarn = JSON.stringify(looseVal.warnings ?? [])
+ok('⑩d 宽松模式：api/description 与 dep/label 统一降级 warning 且 0 error',
+  looseVal.ok === true && (looseVal.errors ?? []).length === 0 && /api\/description-too-long/.test(looseWarn) && /dep\/label-too-long/.test(looseWarn),
+  JSON.stringify({ ok: looseVal.ok, errors: (looseVal.errors ?? []).map(e => e.code ?? e), warnings: (looseVal.warnings ?? []).map(w => w.code ?? w) }))
+
 console.log('\n=== 结果：' + (fails.length === 0 ? '全部 PASS' : 'FAIL ' + fails.length + ' 项 → ' + fails.join(' | ')) + ' ===')
 rmSync(work, { recursive: true, force: true })
 process.exit(fails.length === 0 ? 0 : 1)

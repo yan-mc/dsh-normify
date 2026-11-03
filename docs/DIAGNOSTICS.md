@@ -4,7 +4,7 @@
 > 重新生成：`node scripts/gen-diagnostics.mjs`；发布前防漂移校验：`node scripts/gen-diagnostics.mjs --check`。
 
 - 扫描范围：`src/core` 下全部 `.ts`（共 20 个文件）
-- 字面量诊断码：**223**（error 200，warning 23，error+warning 双级 0）
+- 字面量诊断码：**235**（error 212，warning 23，error+warning 双级 0）
 - 动态码族：**6**（实际码随字段/规则 id 变化，见「动态诊断码」）
 - 诊断对象形状：`severity / code / message / subject / evidence / supportedFixes`（AI 可据此自修复）
 
@@ -19,11 +19,11 @@
 
 | 族 | 码数 | 诊断码 |
 | --- | --- | --- |
-| `api/` | 11 | `api/entry-shape`、`api/key-duplicate`、`api/leaf-empty`、`api/leaf-missing`、`api/method-forbidden`、`api/method-required`、`api/non-leaf`、`api/path-empty`、`api/protocol-unknown`、`api/type`、`api/unknown-field` |
+| `api/` | 14 | `api/description-empty`、`api/description-shape`、`api/description-too-long`、`api/entry-shape`、`api/key-duplicate`、`api/leaf-empty`、`api/leaf-missing`、`api/method-forbidden`、`api/method-required`、`api/non-leaf`、`api/path-empty`、`api/protocol-unknown`、`api/type`、`api/unknown-field` |
 | `args/` | 3 | `args/empty-batch`、`args/empty-patch`、`args/invalid-patch` |
 | `build/` | 1 | `build/write-failed` |
 | `change/` | 36 | `change/abandoned`、`change/acceptance`、`change/acceptance-too-many`、`change/api-already-removed`、`change/api-module-missing`、`change/api-ref`、`change/closed`、`change/closed-at`、`change/create-not-landed`、`change/created-at`、`change/delete-snapshot`、`change/delete-snapshot-duplicate`、`change/delete-snapshot-orphan`、`change/id-format`、`change/id-mismatch`、`change/intent`、`change/invalid`、`change/json-parse`、`change/module-id`、`change/module-id-duplicate`、`change/module-missing`、`change/modules`、`change/modules-unknown`、`change/multiple-in-progress`、`change/not-found`、`change/note`、`change/open-closed-at`、`change/revision`、`change/revision-sha`、`change/schema-version`、`change/shape`、`change/status`、`change/title`、`change/unknown-field`、`change/updated-at`、`change/verified-closed-at` |
-| `dep/` | 13 | `dep/duplicate`、`dep/entry-shape`、`dep/from-api-invalid`、`dep/from-api-non-leaf`、`dep/kind-unknown`、`dep/self-loop`、`dep/target-dropped`、`dep/target-missing`、`dep/to-api-invalid`、`dep/to-empty`、`dep/type`、`dep/unanchored`、`dep/unknown-field` |
+| `dep/` | 16 | `dep/duplicate`、`dep/entry-shape`、`dep/from-api-invalid`、`dep/from-api-non-leaf`、`dep/kind-unknown`、`dep/label-empty`、`dep/label-shape`、`dep/label-too-long`、`dep/self-loop`、`dep/target-dropped`、`dep/target-missing`、`dep/to-api-invalid`、`dep/to-empty`、`dep/type`、`dep/unanchored`、`dep/unknown-field` |
 | `deprecation/` | 4 | `deprecation/inbound`、`deprecation/no-replacement`、`deprecation/replacement-deprecated`、`deprecation/replacement-missing` |
 | `diff/` | 1 | `diff/no-tree` |
 | `evidence/` | 6 | `evidence/checks-skipped`、`evidence/fingerprint-drift`、`evidence/fingerprint-pending`、`evidence/fingerprint-unavailable`、`evidence/root-no-source`、`evidence/source-missing` |
@@ -34,24 +34,27 @@
 | `proposal/` | 8 | `proposal/from-missing`、`proposal/id-format`、`proposal/kind`、`proposal/parent-mismatch`、`proposal/parent-not-exist`、`proposal/parent-patch`、`proposal/self-loop`、`proposal/to-missing` |
 | `refresh/` | 6 | `refresh/activate-no-source`、`refresh/activate-not-landed`、`refresh/git-unavailable`、`refresh/no-target`、`refresh/planned-not-landed`、`refresh/write-failed` |
 | `render/` | 4 | `render/bad-tree`、`render/invalid-out`、`render/no-build`、`render/write-failed` |
-| `structure/` | 37 | `structure/api-dropped-on-promote`、`structure/cycle`、`structure/dependency-cycle`、`structure/file-id-mismatch`、`structure/fingerprint-invalid`、`structure/id-duplicate`、`structure/id-format`、`structure/id-reserved`、`structure/leaf-too-coarse`、`structure/leaf-too-coarse-many`、`structure/missing-field`、`structure/no-root`、`structure/parent-dropped`、`structure/parent-mismatch`、`structure/parent-not-exist`、`structure/parent-type`、`structure/planned-source-missing`、`structure/replacement-invalid`、`structure/replacement-state`、`structure/repository-invalid`、`structure/repository-root-only`、`structure/revision-invalid`、`structure/root-single-segment`、`structure/shallow-hierarchy`、`structure/source-entry-shape`、`structure/source-path-invalid`、`structure/source-range-invalid`、`structure/source-type`、`structure/state-invalid`、`structure/tag-duplicate`、`structure/tag-invalid`、`structure/tags-shape`、`structure/tags-too-many`、`structure/uid-duplicate`、`structure/uid-format`、`structure/unknown-field`、`structure/updated-at-invalid` |
+| `structure/` | 43 | `structure/api-dropped-on-promote`、`structure/cycle`、`structure/dependency-cycle`、`structure/description-empty`、`structure/description-shape`、`structure/description-too-long`、`structure/file-id-mismatch`、`structure/fingerprint-invalid`、`structure/id-duplicate`、`structure/id-format`、`structure/id-reserved`、`structure/leaf-too-coarse`、`structure/leaf-too-coarse-many`、`structure/missing-field`、`structure/name-empty`、`structure/name-shape`、`structure/name-too-long`、`structure/no-root`、`structure/parent-dropped`、`structure/parent-mismatch`、`structure/parent-not-exist`、`structure/parent-type`、`structure/planned-source-missing`、`structure/replacement-invalid`、`structure/replacement-state`、`structure/repository-invalid`、`structure/repository-root-only`、`structure/revision-invalid`、`structure/root-single-segment`、`structure/shallow-hierarchy`、`structure/source-entry-shape`、`structure/source-path-invalid`、`structure/source-range-invalid`、`structure/source-type`、`structure/state-invalid`、`structure/tag-duplicate`、`structure/tag-invalid`、`structure/tags-shape`、`structure/tags-too-many`、`structure/uid-duplicate`、`structure/uid-format`、`structure/unknown-field`、`structure/updated-at-invalid` |
 | `verify/` | 8 | `verify/artifact-missing`、`verify/empty-receipt`、`verify/hash-mismatch`、`verify/no-receipt`、`verify/prior-warning`、`verify/receipt-parse`、`verify/sidecar-mismatch`、`verify/sidecar-missing` |
 
 ## 全量诊断码
 
 | 诊断码 | 级别 | 生成点 | 说明（message 首段） |
 | --- | --- | --- | --- |
-| `api/entry-shape` | error | `src/core/engine/frontmatter.ts:72` | apis 条目必须为对象 |
+| `api/description-empty` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `api/description-shape` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `api/description-too-long` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `api/entry-shape` | error | `src/core/engine/frontmatter.ts:83` | apis 条目必须为对象 |
 | `api/key-duplicate` | error | `src/core/engine/validate.ts:189` | API 键全项目重复 |
 | `api/leaf-empty` | warning | `src/core/engine/validate.ts:137` | 叶子模块 apis 为空（无接口的功能单元） |
 | `api/leaf-missing` | error | `src/core/engine/validate.ts:134` | 叶子模块必须写 apis 字段 |
-| `api/method-forbidden` | error | `src/core/engine/frontmatter.ts:96` | 非 http 类 API 不能有 method 字段 |
-| `api/method-required` | error | `src/core/engine/frontmatter.ts:91` | http 类 API 必须有大写 method |
+| `api/method-forbidden` | error | `src/core/engine/frontmatter.ts:107` | 非 http 类 API 不能有 method 字段 |
+| `api/method-required` | error | `src/core/engine/frontmatter.ts:102` | http 类 API 必须有大写 method |
 | `api/non-leaf` | error | `src/core/engine/validate.ts:141` | 非叶子（含根）模块禁止 apis 字段；API 只定义在叶子上 |
-| `api/path-empty` | error | `src/core/engine/frontmatter.ts:86` | path 不能为空 |
-| `api/protocol-unknown` | error | `src/core/engine/frontmatter.ts:82` | protocol 不在允许枚举内 |
-| `api/type` | error | `src/core/engine/frontmatter.ts:247` | apis 必须为数组 |
-| `api/unknown-field` | error | `src/core/engine/frontmatter.ts:77` | （动态拼接） |
+| `api/path-empty` | error | `src/core/engine/frontmatter.ts:97` | path 不能为空 |
+| `api/protocol-unknown` | error | `src/core/engine/frontmatter.ts:93` | protocol 不在允许枚举内 |
+| `api/type` | error | `src/core/engine/frontmatter.ts:258` | apis 必须为数组 |
+| `api/unknown-field` | error | `src/core/engine/frontmatter.ts:88` | （动态拼接） |
 | `args/empty-batch` | error | `src/core/engine/edit.ts:233` | items 不能为空：空批次不会修改任何内容（也不会返回 count:0 的假成功） |
 | `args/empty-patch` | error | `src/core/engine/edit.ts:200` | 没有任何字段要改：patch 里至少要有一个字段（或传 body） |
 | `args/invalid-patch` | error | `src/core/engine/edit.ts:281` | patch 模式要求 items[i] = { patch: { id, patch: { ...要改的字段 } } } —— 内层 patch 才是字段补丁；当前内层缺失或为空（若直接放行，会"返回 ok 但一个字段都没改"） |
@@ -93,18 +96,21 @@
 | `change/updated-at` | error | `src/core/engine/changes.ts:63` | updated_at 必须为 ISO 8601 |
 | `change/verified-closed-at` | error | `src/core/engine/changes.ts:156` | status=verified 的变更必须有 closed_at |
 | `dep/duplicate` | error | `src/core/engine/validate.ts:180` | 重复的依赖箭头 |
-| `dep/entry-shape` | error | `src/core/engine/frontmatter.ts:104` | deps 条目必须为对象 |
+| `dep/entry-shape` | error | `src/core/engine/frontmatter.ts:115` | deps 条目必须为对象 |
 | `dep/from-api-invalid` | error | `src/core/engine/validate.ts:166` | from_api 不是本模块的 API 键 |
 | `dep/from-api-non-leaf` | error | `src/core/engine/validate.ts:163` | from_api 只能引用本模块 API（非叶子没有 API） |
-| `dep/kind-unknown` | error | `src/core/engine/frontmatter.ts:113` | kind 不在允许枚举内 |
+| `dep/kind-unknown` | error | `src/core/engine/frontmatter.ts:124` | kind 不在允许枚举内 |
+| `dep/label-empty` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `dep/label-shape` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `dep/label-too-long` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
 | `dep/self-loop` | error | `src/core/engine/edit.ts:311`<br>`src/core/engine/validate.ts:154` | 箭头不能指向自身 |
 | `dep/target-dropped` | error | `src/core/engine/edit.ts:315` | （动态拼接） |
 | `dep/target-missing` | error | `src/core/engine/edit.ts:317`<br>`src/core/engine/validate.ts:158` | 箭头目标不存在（批次内也找不到） |
 | `dep/to-api-invalid` | error | `src/core/engine/validate.ts:172` | to_api 不是目标模块自身的 API 键 |
-| `dep/to-empty` | error | `src/core/engine/frontmatter.ts:117` | to 必须为目标模块 id |
-| `dep/type` | error | `src/core/engine/frontmatter.ts:250` | deps 必须为数组 |
+| `dep/to-empty` | error | `src/core/engine/frontmatter.ts:128` | to 必须为目标模块 id |
+| `dep/type` | error | `src/core/engine/frontmatter.ts:261` | deps 必须为数组 |
 | `dep/unanchored` | warning | `src/core/engine/validate.ts:234` | （动态拼接） |
-| `dep/unknown-field` | error | `src/core/engine/frontmatter.ts:109` | （动态拼接） |
+| `dep/unknown-field` | error | `src/core/engine/frontmatter.ts:120` | （动态拼接） |
 | `deprecation/inbound` | warning | `src/core/engine/validate.ts:212` | 依赖指向已废弃模块，建议迁移 |
 | `deprecation/no-replacement` | warning | `src/core/engine/validate.ts:197` | 已废弃模块未提供 replacement，调用方无从迁移 |
 | `deprecation/replacement-deprecated` | warning | `src/core/engine/validate.ts:204` | replacement 本身也是 deprecated |
@@ -116,11 +122,11 @@
 | `evidence/fingerprint-unavailable` | error | `src/core/engine/validate.ts:321` | 无法计算 fingerprint（文件缺失） |
 | `evidence/root-no-source` | warning | `src/core/engine/validate.ts:301` | 根模块无 source（纯文档根） |
 | `evidence/source-missing` | error | `src/core/engine/edit.ts:714`<br>`src/core/engine/validate.ts:310` | source 指向的文件在仓库中不存在 |
-| `input/no-frontmatter` | error | `src/core/engine/frontmatter.ts:299` | 模块文件必须以 --- 开头的 YAML frontmatter 开始 |
-| `input/not-object` | error | `src/core/engine/frontmatter.ts:139` | frontmatter 解析结果必须为映射 |
+| `input/no-frontmatter` | error | `src/core/engine/frontmatter.ts:312` | 模块文件必须以 --- 开头的 YAML frontmatter 开始 |
+| `input/not-object` | error | `src/core/engine/frontmatter.ts:150` | frontmatter 解析结果必须为映射 |
 | `input/read` | error | `src/core/engine/store.ts:127` | 无法读取模块文件 |
-| `input/unclosed-frontmatter` | error | `src/core/engine/frontmatter.ts:314` | frontmatter 缺少结束行 --- |
-| `input/yaml-parse` | error | `src/core/engine/frontmatter.ts:329` | （动态拼接） |
+| `input/unclosed-frontmatter` | error | `src/core/engine/frontmatter.ts:327` | frontmatter 缺少结束行 --- |
+| `input/yaml-parse` | error | `src/core/engine/frontmatter.ts:342` | （动态拼接） |
 | `layout/file-name` | error | `src/core/engine/layout.ts:391` | 渲染数据文件名不符合 renders/<id>.json 约定 |
 | `layout/group-child` | error | `src/core/engine/layout.ts:233` | group.children 只能包含直接子模块 id |
 | `layout/group-child-duplicate` | error | `src/core/engine/layout.ts:237` | 子模块被分到多个 group |
@@ -222,40 +228,46 @@
 | `structure/api-dropped-on-promote` | warning | `src/core/engine/store.ts:187` | （动态拼接） |
 | `structure/cycle` | error | `src/core/engine/validate.ts:95` | parent 链存在环 |
 | `structure/dependency-cycle` | error | `src/core/engine/validate.ts:275` | 依赖图存在环（未安装 policy.yml，由 L2 内置无环检查发现） |
+| `structure/description-empty` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `structure/description-shape` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `structure/description-too-long` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
 | `structure/file-id-mismatch` | error | `src/core/engine/validate.ts:125` | 文件路径与 id 映射不一致 |
-| `structure/fingerprint-invalid` | error | `src/core/engine/frontmatter.ts:244` | fingerprint 必须为非空十六进制哈希（planned 或空 source 的模块可用 pending） |
+| `structure/fingerprint-invalid` | error | `src/core/engine/frontmatter.ts:255` | fingerprint 必须为非空十六进制哈希（planned 或空 source 的模块可用 pending） |
 | `structure/id-duplicate` | error | `src/core/engine/validate.ts:55` | 模块 id 重复 |
-| `structure/id-format` | error | `src/core/engine/edit.ts:308`<br>`src/core/engine/edit.ts:379`<br>`src/core/engine/frontmatter.ts:163` | id 非法 |
-| `structure/id-reserved` | error | `src/core/engine/frontmatter.ts:160` | （动态拼接） |
+| `structure/id-format` | error | `src/core/engine/edit.ts:308`<br>`src/core/engine/edit.ts:379`<br>`src/core/engine/frontmatter.ts:174` | id 非法 |
+| `structure/id-reserved` | error | `src/core/engine/frontmatter.ts:171` | （动态拼接） |
 | `structure/leaf-too-coarse` | warning | `src/core/engine/validate.ts:238` | （动态拼接） |
 | `structure/leaf-too-coarse-many` | warning | `src/core/engine/validate.ts:241` | 还有更多过粗的叶子模块 |
-| `structure/missing-field` | error | `src/core/engine/frontmatter.ts:149` | （动态拼接） |
+| `structure/missing-field` | error | `src/core/engine/frontmatter.ts:160` | （动态拼接） |
+| `structure/name-empty` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `structure/name-shape` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
+| `structure/name-too-long` | error | `src/core/engine/frontmatter.ts:32` | （@diag-codes 显式枚举：L1 文案校验；宽松模式在 L2 降级为 warning） |
 | `structure/no-root` | error | `src/core/engine/validate.ts:83` | 全项目必须至少一个根模块（id 单段、parent: null） |
 | `structure/parent-dropped` | error | `src/core/engine/edit.ts:300` | （动态拼接） |
-| `structure/parent-mismatch` | error | `src/core/engine/edit.ts:305`<br>`src/core/engine/frontmatter.ts:174`<br>`src/core/engine/frontmatter.ts:178` | parent 必须等于 id 去掉最后一段 |
+| `structure/parent-mismatch` | error | `src/core/engine/edit.ts:305`<br>`src/core/engine/frontmatter.ts:185`<br>`src/core/engine/frontmatter.ts:189` | parent 必须等于 id 去掉最后一段 |
 | `structure/parent-not-exist` | error | `src/core/engine/edit.ts:302`<br>`src/core/engine/edit.ts:386`<br>`src/core/engine/validate.ts:108` | parent 不存在（批次内也找不到） |
-| `structure/parent-type` | error | `src/core/engine/frontmatter.ts:168` | parent 必须为字符串或 null |
+| `structure/parent-type` | error | `src/core/engine/frontmatter.ts:179` | parent 必须为字符串或 null |
 | `structure/planned-source-missing` | warning | `src/core/engine/validate.ts:307` | 计划态模块的 source 尚未落地（实现后刷新即可） |
-| `structure/replacement-invalid` | error | `src/core/engine/frontmatter.ts:220` | replacement 必须为合法模块 id |
-| `structure/replacement-state` | error | `src/core/engine/frontmatter.ts:217` | replacement 只允许出现在 state=deprecated 的模块上 |
-| `structure/repository-invalid` | error | `src/core/engine/frontmatter.ts:183` | repository 必须为 http(s) URL |
-| `structure/repository-root-only` | error | `src/core/engine/frontmatter.ts:186` | repository 只允许出现在根模块 |
-| `structure/revision-invalid` | error | `src/core/engine/frontmatter.ts:199` | revision 必须为 40 位 git SHA |
+| `structure/replacement-invalid` | error | `src/core/engine/frontmatter.ts:231` | replacement 必须为合法模块 id |
+| `structure/replacement-state` | error | `src/core/engine/frontmatter.ts:228` | replacement 只允许出现在 state=deprecated 的模块上 |
+| `structure/repository-invalid` | error | `src/core/engine/frontmatter.ts:194` | repository 必须为 http(s) URL |
+| `structure/repository-root-only` | error | `src/core/engine/frontmatter.ts:197` | repository 只允许出现在根模块 |
+| `structure/revision-invalid` | error | `src/core/engine/frontmatter.ts:210` | revision 必须为 40 位 git SHA |
 | `structure/root-single-segment` | error | `src/core/engine/validate.ts:87` | 根模块 id 必须为单段（树名） |
 | `structure/shallow-hierarchy` | warning | `src/core/engine/validate.ts:245` | （动态拼接） |
-| `structure/source-entry-shape` | error | `src/core/engine/frontmatter.ts:40` | source 条目必须为对象 |
-| `structure/source-path-invalid` | error | `src/core/engine/frontmatter.ts:50`<br>`src/core/engine/frontmatter.ts:54` | source.path 必须为 1-240 字符的 repo 相对路径 |
-| `structure/source-range-invalid` | error | `src/core/engine/frontmatter.ts:65` | source.end_line 不能小于 line |
-| `structure/source-type` | error | `src/core/engine/frontmatter.ts:193` | source 必须为数组 |
-| `structure/state-invalid` | error | `src/core/engine/frontmatter.ts:209` | （动态拼接） |
-| `structure/tag-duplicate` | error | `src/core/engine/frontmatter.ts:235` | tag 重复 |
-| `structure/tag-invalid` | error | `src/core/engine/frontmatter.ts:231` | tag 必须为非空字符串（≤24 字符） |
-| `structure/tags-shape` | error | `src/core/engine/frontmatter.ts:225` | tags 必须为字符串数组 |
-| `structure/tags-too-many` | error | `src/core/engine/frontmatter.ts:239` | tags 最多 12 个 |
+| `structure/source-entry-shape` | error | `src/core/engine/frontmatter.ts:51` | source 条目必须为对象 |
+| `structure/source-path-invalid` | error | `src/core/engine/frontmatter.ts:61`<br>`src/core/engine/frontmatter.ts:65` | source.path 必须为 1-240 字符的 repo 相对路径 |
+| `structure/source-range-invalid` | error | `src/core/engine/frontmatter.ts:76` | source.end_line 不能小于 line |
+| `structure/source-type` | error | `src/core/engine/frontmatter.ts:204` | source 必须为数组 |
+| `structure/state-invalid` | error | `src/core/engine/frontmatter.ts:220` | （动态拼接） |
+| `structure/tag-duplicate` | error | `src/core/engine/frontmatter.ts:246` | tag 重复 |
+| `structure/tag-invalid` | error | `src/core/engine/frontmatter.ts:242` | tag 必须为非空字符串（≤24 字符） |
+| `structure/tags-shape` | error | `src/core/engine/frontmatter.ts:236` | tags 必须为字符串数组 |
+| `structure/tags-too-many` | error | `src/core/engine/frontmatter.ts:250` | tags 最多 12 个 |
 | `structure/uid-duplicate` | error | `src/core/engine/validate.ts:66` | uid 重复 |
-| `structure/uid-format` | error | `src/core/engine/frontmatter.ts:154` | uid 必须为 8 位小写 hex |
-| `structure/unknown-field` | error | `src/core/engine/frontmatter.ts:45`<br>`src/core/engine/frontmatter.ts:144` | （动态拼接） |
-| `structure/updated-at-invalid` | error | `src/core/engine/frontmatter.ts:203` | updated_at 必须为 ISO 8601 时间 |
+| `structure/uid-format` | error | `src/core/engine/frontmatter.ts:165` | uid 必须为 8 位小写 hex |
+| `structure/unknown-field` | error | `src/core/engine/frontmatter.ts:56`<br>`src/core/engine/frontmatter.ts:155` | （动态拼接） |
+| `structure/updated-at-invalid` | error | `src/core/engine/frontmatter.ts:214` | updated_at 必须为 ISO 8601 时间 |
 | `verify/artifact-missing` | error | `src/core/engine/compile.ts:414` | （动态拼接） |
 | `verify/empty-receipt` | error | `src/core/engine/compile.ts:423` | receipt.json 未登记任何产物 |
 | `verify/hash-mismatch` | error | `src/core/engine/compile.ts:418` | （动态拼接） |
@@ -271,12 +283,12 @@
 
 | 码模板 | 级别 | 生成点 | 表达式（源码） |
 | --- | --- | --- | --- |
-| `dep/<k>-invalid` | error | `src/core/engine/frontmatter.ts:122` | `'dep/' + k + '-invalid'` |
+| `<codePrefix>/<field>-empty` | error | `src/core/engine/frontmatter.ts:42` | `codePrefix + '/' + field + '-empty'` |
+| `<codePrefix>/<field>-shape` | error | `src/core/engine/frontmatter.ts:36` | `codePrefix + '/' + field + '-shape'` |
+| `<codePrefix>/<field>-too-long` | error | `src/core/engine/frontmatter.ts:45` | `codePrefix + '/' + field + '-too-long'` |
+| `dep/<k>-invalid` | error | `src/core/engine/frontmatter.ts:133` | `'dep/' + k + '-invalid'` |
 | `policy/<rule.id>` | 动态 | `src/core/engine/policy.ts:301` | `'policy/' + rule.id` |
-| `structure/<field>-empty` | error | `src/core/engine/frontmatter.ts:31` | `'structure/' + field + '-empty'` |
-| `structure/<field>-shape` | error | `src/core/engine/frontmatter.ts:25` | `'structure/' + field + '-shape'` |
-| `structure/<field>-too-long` | error | `src/core/engine/frontmatter.ts:34` | `'structure/' + field + '-too-long'` |
-| `structure/source-<k>-invalid` | error | `src/core/engine/frontmatter.ts:60` | `'structure/source-' + k + '-invalid'` |
+| `structure/source-<k>-invalid` | error | `src/core/engine/frontmatter.ts:71` | `'structure/source-' + k + '-invalid'` |
 
 ---
 

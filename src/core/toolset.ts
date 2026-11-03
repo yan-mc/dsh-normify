@@ -726,7 +726,7 @@ export function createNormifyTools(env: ToolEnv): NormifyToolSpec[] {
                     ...(typeof rootArgs.repository === 'string' && rootArgs.repository.trim() !== '' ? { repository: rootArgs.repository.trim() } : {}),
                 };
                 const r = l1Validate(fm, 'project.init/root');
-                if (r.module === null) {
+                if (r.module === null || r.errors.length > 0) {
                     return { ok: false, errors: r.errors.map(fmtDiag), summary: r.errors.length + ' error（未写入）', hint: 'root 需要 {id, name:{zh,en}, description:{zh,en}}；根模块 parent 固定为 null。' };
                 }
                 await writeModuleFile(proj.dir, r.module, '');
@@ -769,7 +769,7 @@ export function createNormifyTools(env: ToolEnv): NormifyToolSpec[] {
         if (fm.parent === 'null' || fm.parent === null)
             fm.parent = null;
         const { module, errors, warnings } = l1Validate(fm, 'module.upsert');
-        if (module === null) {
+        if (module === null || errors.length > 0) {
             return { ok: false, errors: errors.map(fmtDiag), warnings: warnings.map(fmtDiag), summary: errors.length + ' error（未写入）' };
         }
         const existingFiles = await loadFilesOrThrow(proj.dir);

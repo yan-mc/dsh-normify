@@ -7,6 +7,13 @@ const TOP_KEYS = ['uid', 'id', 'parent', 'name', 'description', 'source', 'revis
 const SOURCE_KEYS = ['path', 'line', 'end_line'];
 const API_KEYS = ['protocol', 'method', 'path', 'description'];
 const DEP_KEYS = ['kind', 'to', 'from_api', 'to_api', 'label'];
+/** 仅“文案内容”类（空/超长）错误：L1 仍返回模块，交 L2 按 requireBilingual 统一分级（issue #4）。 */
+const CONTENT_ONLY_CODES = new Set([
+    'structure/name-empty', 'structure/name-too-long',
+    'structure/description-empty', 'structure/description-too-long',
+    'api/description-empty', 'api/description-too-long',
+    'dep/label-empty', 'dep/label-too-long',
+]);
 /** YAML 解析结果的映射视图：字段先按 unknown 取出，再逐项收窄。 */
 type RawMap = Record<string, unknown>;
 /** 枚举收窄辅助：readonly 元组的字面量联合，供 includes 断言用。 */
@@ -20,18 +27,22 @@ function isL10n(v: unknown): v is LocalizedText {
 function isPlain(v: unknown): v is RawMap {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
-function checkL10n(value: unknown, field: string, maxLen: number, where: string, out: Diagnostic[]): void {
+/**
+ * 文案（{zh,en}）校验可能产生的全部诊断码：前缀由调用方传入（模块=structure / API=api / 依赖=dep）。
+ * @diag-codes structure/name-shape structure/name-empty structure/name-too-long structure/description-shape structure/description-empty structure/description-too-long api/description-shape api/description-empty api/description-too-long dep/label-shape dep/label-empty dep/label-too-long
+ */
+function checkL10n(value: unknown, field: string, maxLen: number, where: string, out: Diagnostic[], codePrefix = 'structure'): void {
     if (!isL10n(value)) {
-        out.push(diag('error', 'structure/' + field + '-shape', field + ' 必须为 {zh, en} 字符串对象', { path: where + '/' + field }, { value }, ['补全 {zh, en} 双语字段']));
+        out.push(diag('error', codePrefix + '/' + field + '-shape', field + ' 必须为 {zh, en} 字符串对象', { path: where + '/' + field }, { value }, ['补全 {zh, en} 双语字段']));
         return;
     }
     for (const lang of ['zh', 'en'] as const) {
         const s = value[lang].trim();
         if (s.length === 0) {
-            out.push(diag('error', 'structure/' + field + '-empty', field + '.' + lang + ' 不能为空', { path: where + '/' + field + '/' + lang }, {}, ['补写' + lang + '文案']));
+            out.push(diag('error', codePrefix + '/' + field + '-empty', field + '.' + lang + ' 不能为空', { path: where + '/' + field + '/' + lang }, {}, ['补写' + lang + '文案']));
         }
         else if (s.length > maxLen) {
-            out.push(diag('error', 'structure/' + field + '-too-long', field + '.' + lang + ' 超过 ' + maxLen + ' 字符', { path: where + '/' + field + '/' + lang }, { length: s.length, max: maxLen }, ['精简文案到 ' + maxLen + ' 字符以内']));
+            out.push(diag('error', codePrefix + '/' + field + '-too-long', field + '.' + lang + ' 超过 ' + maxLen + ' 字符', { path: where + '/' + field + '/' + lang }, { length: s.length, max: maxLen }, ['精简文案到 ' + maxLen + ' 字符以内']));
         }
     }
 }
@@ -96,7 +107,7 @@ export function checkApiEntry(v: unknown, where: string, out: Diagnostic[]): boo
         out.push(diag('error', 'api/method-forbidden', '非 http 类 API 不能有 method 字段', { path: where + '/method' }, {}, ['删除 method 字段']));
         return false;
     }
-    checkL10n(v.description, 'description', 200, where, out);
+    checkL10n(v.description, 'description', 200, where, out, 'api');
     return true;
 }
 export function checkDepEntry(v: unknown, where: string, out: Diagnostic[]): boolean {
@@ -124,7 +135,7 @@ export function checkDepEntry(v: unknown, where: string, out: Diagnostic[]): boo
         }
     }
     if (v.label !== undefined)
-        checkL10n(v.label, 'label', 30, where, out);
+        checkL10n(v.label, 'label', 30, where, out, 'dep');
     return true;
 }
 /** L1：单文件级字段校验（规范 §5.2 结构/API/边类的格式部分）。 */
@@ -249,7 +260,9 @@ export function l1Validate(data: unknown, where: string): {
     if (data.deps !== undefined && !Array.isArray(data.deps)) {
         errors.push(diag('error', 'dep/type', 'deps 必须为数组', { path: where + '/deps' }, {}, []));
     }
-    if (errors.length > 0)
+    // 只有结构性错误才阻断模块构建；文案空/超长属于 L2 可分级的内容问题。
+    const structural = errors.filter(e => !CONTENT_ONLY_CODES.has(e.code));
+    if (structural.length > 0)
         return { module: null, errors, warnings };
     const module: Module = {
         uid: uid as string,
@@ -273,13 +286,13 @@ export function l1Validate(data: unknown, where: string): {
     if (Array.isArray(data.apis)) {
         module.apis = data.apis as Api[];
         data.apis.forEach((a: unknown, i: number) => checkApiEntry(a, where + '/apis/' + i, errors));
-        if (errors.length > 0)
+        if (errors.some(e => !CONTENT_ONLY_CODES.has(e.code)))
             return { module: null, errors, warnings };
     }
     if (Array.isArray(data.deps)) {
         module.deps = data.deps as Dep[];
         data.deps.forEach((d: unknown, i: number) => checkDepEntry(d, where + '/deps/' + i, errors));
-        if (errors.length > 0)
+        if (errors.some(e => !CONTENT_ONLY_CODES.has(e.code)))
             return { module: null, errors, warnings };
     }
     return { module, errors, warnings };

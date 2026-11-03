@@ -42,6 +42,8 @@ normify-<slug>/
 | `repository` | 可选 | 仅根模块；该树对应仓库的 http(s) URL |
 | `apis` | 可选 | **仅叶子**；`{protocol, method?, path, description{zh,en}}`；非叶子出现即 error |
 | `deps` | 可选 | 出向箭头 `{kind, to, from_api?, to_api?, label?}`；只存源端 |
+> 长度上限（zh/en 分别计）：模块 `name` ≤ 60；模块 `description` ≤ 500；`apis[].description` ≤ 200；`deps[].label`（可选）≤ 30。
+> 诊断码：`structure/name-too-long`、`structure/description-too-long`、`api/description-too-long`、`dep/label-too-long`（宽松模式 `requireBilingual:false` 下统一降级为 warning）。
 
 **取值约束**
 
