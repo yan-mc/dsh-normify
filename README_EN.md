@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.5-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.2.1--rc.5-7C3AED?style=flat-square" alt="DSH">
@@ -68,7 +68,7 @@ Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a develo
 | --- | --- | --- |
 | **L1** | every write | required fields, id grammar, uid, parent consistency, bilingual lengths, source/apis/deps shapes, state/replacement |
 | **L2** | `normify_validate` | uniqueness, file↔id mapping, leaf/non-leaf rules, globally unique API keys, dependency targets, cycles, render-data cross checks, policy, change log, optional repository evidence (source existence + fingerprint match) |
-| **L3** | `normify_build` | nothing is emitted when any error exists; emitted artifacts get SHA-256 receipts (`receipt.json` plus a `receipt.sha256` sidecar) |
+| **L3** | `normify_build` | nothing is emitted when any error exists; five artifacts (tree/outline/api-index/structure-manifest/receipt) plus a `receipt.sha256` receipt chain |
 
 Every diagnostic carries `severity / code / message / subject / evidence / supportedFixes` so the **AI can fix it itself**.
 
@@ -120,7 +120,7 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
   `normify_fingerprint` accepts repo-relative POSIX source paths only — out-of-root paths and symlinks are treated
   as missing rather than read.
 - **Self-verifiable L3 receipts**: `receipt.json` no longer lists itself in `artifacts`; a sibling `receipt.sha256`
-  sidecar covers it, so all four artifacts can be recomputed independently.
+  sidecar covers it, so all five artifacts can be recomputed independently.
 - **Data correctness**: reserved `index` last segment rejected before writing (`structure/id-reserved`), explicit
   errors for empty batches / orphan upserts / unreadable files (`args/empty-batch` / `structure/parent-not-exist`),
   cycle detection back in L2 (`structure/dependency-cycle`), and `delete`-only changes no longer deadlock
@@ -241,10 +241,10 @@ Open a **new DSH session** after installing: the tool list is snapshotted when a
 In a DSH session, ask the agent to install it through the plugin manager (`plugin_manager` → `install_bundle`).
 The target can be:
 
-- **this repository directory** (run `npm install` first when installing from source; `lib/` is already shipped,
-  no build step needed);
-- **the packed tarball** `dist/dsh-external-dsh-normify-0.5.5.tgz` (or the matching Release asset) — the exact
-  install spec is the one suggested by the plugin manager;
+- **this repository directory** (run `npm install && npm run build` first when installing from source;
+  `lib/` is no longer committed to git, so it must be built);
+- **the packed tarball** (`dsh-external-dsh-normify-<version>.tgz` produced by `npm pack`, or the matching
+  Release asset) — the exact install spec is the one suggested by the plugin manager;
 - **a plugin-market entry**, if the market index you configured already lists this plugin.
 
 The DSH plugin manager validates `engines`, writes the profile and registers the bundle.
@@ -296,6 +296,7 @@ normify_tree_list → normify_module_upsert (root + first level)
   → normify_layout_upsert (one render dataset per container)
   → normify_fingerprint (always compute before writing a fingerprint)
   → normify_validate (zero-error gate) → normify_build → normify_render
+  → normify_build{verify_only:true} (or CLI `verify`) confirms the receipt chain
 ```
 
 Artifacts (inside the structure directory `normify-<slug>/`):
@@ -308,7 +309,8 @@ Artifacts (inside the structure directory `normify-<slug>/`):
 | `changes/<id>.json` | development change log, archived together with the structure |
 | `tree.json` | compiled: module dictionary + API index + edges + layouts + policy + change stats |
 | `outline.md` / `api-index.json` | human-readable outline / API index |
-| `receipt.json` | SHA-256 frozen receipt (stats + warning summary; does not include itself) |
+| `structure-manifest.json` | structure SBOM: deterministic module/API/dependency inventory + artifact hashes (since 0.6.0) |
+| `receipt.json` | SHA-256 frozen receipt of all artifacts (does not include itself) |
 | `receipt.sha256` | checksum of `receipt.json` itself (sidecar, for external recomputation) |
 | `normify.html` | the single-file interactive map |
 
@@ -428,19 +430,25 @@ before the code lands is refused.
 
 ```bash
 npm install          # devDependencies (typescript / @types/node / cordis / schemastery / cosmokit)
-npm run build        # src/ → lib/ via tsc
+npm run build        # src/ → lib/ via tsc (lib/ is not committed; build before use)
 npm run typecheck    # tsc --noEmit
-npm test             # 5 suites: engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 (DSH-independent, node)
-node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-safe names
+npm test             # 6 suites: engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 / 0.5.5 (DSH-independent, node)
+npm run test:perf    # performance smoke (300 modules, generous threshold)
+node ci-contract-check.cjs           # bundle declaration + exactly 31 tools + provider-safe names
+node scripts/check-core-boundary.mjs # core must not import @deepseek-ai; cli must not import ../dsh
+node scripts/gen-diagnostics.mjs     # regenerate docs/DIAGNOSTICS.md from source
+node scripts/pack-smoke.mjs --all --strict   # release-package smoke (requires local DSH desktop app)
 ```
 
 | Path | Content |
 | --- | --- |
-| `src/` | TypeScript sources (17 `.ts` files, ~7.6k lines): `index.ts`, `tools.ts`, `engine/*` |
-| `lib/` | compiled output (shipped) |
-| `skills/normify-gen/SKILL.md` | the generator skill (rules, workflow, granularity, readability) |
-| `tests/` | five node test suites: engine path / companion loop (eight stages) / regression-0.5.2 / 0.5.3 / 0.5.4 |
-| `docs/SPEC.zh-CN.md` | formal specification (data model / source format / artifacts / validation / generator / renderer) |
+| `src/core/` | pure-Node engine (DSH-independent): `engine/*` (ids/validation/compile/render/changes/atomic writes) + `toolset.ts` (31 tool specs) |
+| `src/dsh/` | DSH adapter: real `ToolDefinition`s (output schema + presenters + approval) |
+| `src/cli/` | CLI (built to `lib/cli/index.js`, `bin: normify`); depends on core only |
+| `lib/` | compiled output (`tsc`; **not in git**, shipped in the npm package) |
+| `skills/normify-gen/` | thin skill `SKILL.md` (≤150 lines) + `references/` (format/validation/recipes/migration/examples) |
+| `tests/` | 6 node test suites + performance smoke |
+| `docs/` | `SPEC.zh-CN.md` (single source of truth) + COMPATIBILITY / MIGRATION / RELEASE-CHECKLIST / DIAGNOSTICS |
 | `vendor/` | vendored schemastery + cosmokit (loaded by relative path) |
 
 ## 12. Compatibility & troubleshooting
@@ -450,6 +458,8 @@ node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-
 | DSH | `0.2.1-rc.5` (engines `>=0.2.1-rc.1 <0.3.0`; peer: `@deepseek-ai/cordis ^4`) |
 | Support policy | **only the current DSH line (0.2.x)**; stay on 0.5.4 if you still run 0.1.x |
 | Node.js | ≥ 18 |
+
+> Full compatibility matrix and evidence: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md); upgrade guide: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 - **Installed but no tools** → the tool list is snapshotted at session start: open a **new session** (or restart DSH).
 - **Install fails with `incompatible-version`** → the plugin version is outside the DSH runtime's engines range:
@@ -465,12 +475,50 @@ node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-
 - **Read-only on your code**: the generator never modifies the analysed repository; it only writes into `normify-<slug>/`.
 - `source` records only repo-relative paths and line numbers, never source text.
 
-## 14. Documentation
+## 14. CLI (cross-agent / CI)
+
+The CLI uses the **same engine** as the DSH tools and does not depend on the DSH runtime: use it in terminals, CI and other agents.
+`lib/` is not committed, so build first when running from source (`npm run build`); the npm package already ships `lib/`.
+
+```bash
+node lib/cli/index.js --help        # commands, options and exit codes
+node lib/cli/index.js tools         # JSON: the 31 tools
+node lib/cli/index.js verify --project demo   # recompute receipt.sha256 → receipt → artifacts
+
+# Common: locate a project with --project <slug> or --dir <absolute structure dir>
+node lib/cli/index.js init --project demo --root-id demo
+node lib/cli/index.js validate --project demo --repo-root F:/repo
+node lib/cli/index.js build --project demo    # tree/outline/api-index/structure-manifest/receipt
+node lib/cli/index.js render --project demo --out normify.html
+node lib/cli/index.js sync --project demo --repo-root F:/repo --diff HEAD~1
+node lib/cli/index.js change-open --project demo --args-json '{"title":{"zh":"…","en":"…"},"acceptance":["…"]}'
+node lib/cli/index.js call <tool-name> --args-json '<json>'   # invoke any tool directly
+```
+
+| Command | Purpose |
+| --- | --- |
+| `init` / `status` / `list` / `get` / `search` / `brief` | init / overview / list modules / get module / search / development brief |
+| `validate` / `check` | project-wide L2 validation / design pre-flight |
+| `build` / `verify` / `render` | compile the five artifacts / receipt-chain verification / single-file HTML |
+| `sync` | incremental regeneration planner (read-only) |
+| `change-open` / `change-list` / `change-close` | change log and zero-error close |
+| `project-list` / `policy` / `help` / `tools` / `call` | list projects / read policy / help / tool list / direct tool call |
+
+- After installation use `normify <command>` (the `bin` maps to `lib/cli/index.js`); otherwise `node lib/cli/index.js`.
+- JSON output by default; `--quiet` prints one-line JSON. **Exit codes are a stable contract**:
+  `0` success; `2` validation/L2 error (including a failed `verify`); `4` argument/usage error; `5` other failure; `6` security refusal.
+- `build --verify-only` / tool `normify_build{verify_only:true}` only verifies the receipt chain, without recompiling.
+
+## 15. Documentation
 
 | Document | Content |
 | --- | --- |
-| [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (Chinese) |
-| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | the generator skill (the AI's playbook) |
+| [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (data model / source format / artifacts / validation / generator / renderer, single source of truth) |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | DSH × plugin version × verification status (pack-smoke evidence) |
+| [`docs/MIGRATION.md`](docs/MIGRATION.md) | 0.5.4→0.5.5, 0.5.x→0.6.0, 0.7.0 preview |
+| [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md) | per-release checklist (build/test/smoke/checksum/tag) |
+| [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) | diagnostic-code index (generated from source by `scripts/gen-diagnostics.mjs`) |
+| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | thin skill entry (details in `references/`: format/validation/recipes/migration/examples) |
 | [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.5) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | contributing guide |
 | [`SECURITY.md`](SECURITY.md) | security policy |

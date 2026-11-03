@@ -25,7 +25,7 @@ Phase 0「P0 止血」版本：不新增功能，只做三件事 —— 兼容�
 **③ L3 回执可自证**
 
 - `receipt.json` 不再把自身写入 `artifacts`（自哈希逻辑上不可能自洽）；新增同目录 `receipt.sha256`
-  sidecar，四件产物可逐件复算。
+  sidecar，四件产物可逐件复算。（0.6.0 起产物增加 `structure-manifest.json`，共五件 + 回执自证链。）
 
 **④ 数据正确性**
 

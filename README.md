@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.5-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.2.1--rc.5-7C3AED?style=flat-square" alt="DSH">
@@ -23,7 +23,7 @@ Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的
 
 - **给 AI 的**：`normify-gen` 技能 + **31 个 `normify_*` 工具** —— 让模型把仓库分析成模块树结构数据，
   并在后续开发中**先建图后编程、伴随编程改图**（计划态建树 → 逐个实现 → 关单收尾）。
-- **给引擎的**：零容忍校验（L1 写时 / L2 全项目 / L3 冻结）+ 确定性编译（`tree.json` 等四件产物，SHA-256 冻结）
+- **给引擎的**：零容忍校验（L1 写时 / L2 全项目 / L3 冻结）+ 确定性编译（`tree.json` 等五件产物 + `receipt.sha256` 回执自证链）
   + 渲染数据（`renders/`，决定"每一层怎么画"）。
 - **给人的**：**单文件交互式架构图**（`normify.html`）—— 逐层下钻、悬停看介绍、一键中英切换、深链接、
   多树、**API 直连箭头**、跨层聚合、缩放与搜索。零依赖，双击即开。
@@ -64,7 +64,7 @@ Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的
 | --- | --- | --- |
 | **L1** | 每次写入 | 必填字段、id 文法、uid、parent 一致性、双语长度、source/apis/deps 形状、state/replacement |
 | **L2** | `normify_validate` | 全项目：唯一性、文件↔id 映射、叶子/非叶子规则、API 键唯一、依赖目标、环、渲染数据交叉校验、架构规则、变更日志、（可选）仓库证据（source 存在性 + 指纹一致） |
-| **L3** | `normify_build` | 任何 error 都不产出产物；产出即逐件写入 SHA-256 回执（`receipt.json` + `receipt.sha256` sidecar） |
+| **L3** | `normify_build` | 任何 error 都不产出产物；产出 5 件产物（tree/outline/api-index/structure-manifest/receipt）+ `receipt.sha256` 回执链 |
 
 每条诊断都带 `severity / code / message / subject / evidence / supportedFixes` —— **AI 可自行修复**。
 
@@ -111,7 +111,7 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
   只支持当前 DSH 线，0.1.x 环境请留在 0.5.4。
 - **安全修复**：`normify_sync` 的 `diff` 范围拒绝以 `-` 开头的选项注入；`normify_render` 的 `out` 只接受纯文件名
   （越界报 `render/invalid-out`）；`normify_fingerprint` 的 `source` 只接受仓库内 POSIX 相对路径，越界/符号链接按缺失处理。
-- **L3 回执可自证**：`receipt.json` 不再把自身写入 `artifacts`，新增同目录 `receipt.sha256` sidecar，四件产物可逐件复算。
+- **L3 回执可自证**：`receipt.json` 不再把自身写入 `artifacts`，新增同目录 `receipt.sha256` sidecar，五件产物可逐件复算。
 - **数据正确性**：`id` 末段保留段名 `index` 写入前拒绝（`structure/id-reserved`）、空 batch / 孤儿 upsert /
   坏文件读取显式报错（`args/empty-batch` / `structure/parent-not-exist`）、环检测回归 L2
   （`structure/dependency-cycle`）、delete 型变更单不再死锁（`change_close` 可用）。
@@ -221,8 +221,8 @@ Normify 以 **DSH bundle** 形式分发，只支持 **DSH 0.2.x**（`engines.dsh
 
 在 DSH 会话里让 AI 通过插件管理器安装（`plugin_manager` 的 `install_bundle`），目标可以是：
 
-- **本仓库目录**（从源码安装时先 `npm install`；`lib/` 已随仓库提供，无需再 build）；
-- **本地发行包** `dist/dsh-external-dsh-normify-0.5.5.tgz`（或对应 Release 附件），安装 spec 以插件管理器提示为准；
+- **本仓库目录**（从源码安装时先 `npm install && npm run build`；`lib/` 已不再入 git，需先构建）；
+- **本地发行包**（`npm pack` 生成的 `dsh-external-dsh-normify-<version>.tgz`，或对应 Release 附件），安装 spec 以插件管理器提示为准；
 - **插件市场条目**（若你配置的市场索引已收录本插件，可直接在插件市场页面安装）。
 
 安装由 DSH 插件管理器完成：校验 `engines` → 写入 profile → 登记 bundle。
@@ -270,6 +270,7 @@ normify_tree_list → normify_module_upsert（根 + 一级子模块）
   → normify_layout_upsert（每个容器一层渲染数据）
   → normify_fingerprint（写 fingerprint 前必算）
   → normify_validate（0 error 门禁）→ normify_build → normify_render
+  → normify_build{verify_only:true}（或 CLI `verify`）确认回执链
 ```
 
 产物（默认写在结构数据目录 `normify-<slug>/` 下）：
@@ -282,7 +283,8 @@ normify_tree_list → normify_module_upsert（根 + 一级子模块）
 | `changes/<id>.json` | 开发变更日志（随结构目录一起回档） |
 | `tree.json` | 编译产物：模块字典 + API 索引 + 边 + 渲染数据 + 规则 + 变更统计 |
 | `outline.md` / `api-index.json` | 人类可读大纲 / API 索引 |
-| `receipt.json` | 产物 SHA-256 冻结回执（含 stats 与 warning 摘要；不包含自身） |
+| `structure-manifest.json` | 结构 SBOM：模块/API/依赖确定性清单 + 产物哈希（0.6.0 起） |
+| `receipt.json` | 各产物 SHA-256 冻结回执（不含自身） |
 | `receipt.sha256` | `receipt.json` 自身的校验和（sidecar，供外部复算） |
 | `normify.html` | 单文件交互式架构图 |
 
@@ -442,20 +444,26 @@ rules:
 ## 13. 工程与测试
 
 ```bash
-npm install          # 安装 devDependencies（typescript / @types/node / cordis / schemastery / cosmokit）
-npm run build        # src/ → lib/（tsc；两条路径：本地 vendor-ts 或 npm）
+npm install          # devDependencies（typescript / @types/node / cordis / schemastery / cosmokit）
+npm run build        # src/ → lib/（tsc；lib/ 不入 git，使用/开发前必须构建）
 npm run typecheck    # tsc --noEmit
-npm test             # 5 套：engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4（不依赖 DSH 的 node 端到端）
-node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工具 + provider 安全命名
+npm test             # 6 套：engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 / 0.5.5
+npm run test:perf    # 性能冒烟（300 模块，宽松阈值）
+node ci-contract-check.cjs           # 契约检查：bundle 声明 + 恰好 31 个工具 + provider 安全命名
+node scripts/check-core-boundary.mjs # 边界检查：core 禁 @deepseek-ai；cli 禁 ../dsh
+node scripts/gen-diagnostics.mjs     # 从源码生成 docs/DIAGNOSTICS.md
+node scripts/pack-smoke.mjs --all --strict   # 发布包冒烟（需本机 DSH 桌面端）
 ```
 
 | 目录 | 内容 |
 | --- | --- |
-| `src/` | TypeScript 源码（17 个 `.ts`，约 7.6k 行）：`index.ts` / `tools.ts` / `engine/*` |
-| `lib/` | 编译产物（`tsc` 输出，随包发布） |
-| `skills/normify-gen/SKILL.md` | 生成器技能（铁律、流程、粒度、可读性配方） |
-| `tests/` | 5 套 node 端测试：引擎链路 / 伴随开发闭环（8 个环节）/ regression-0.5.2 / 0.5.3 / 0.5.4 |
-| `docs/SPEC.zh-CN.md` | 正式规范（数据模型 / 源格式 / 产物 / 校验 / 生成器 / 渲染器 / 插件工程） |
+| `src/core/` | 纯 Node 引擎（DSH 无关）：`engine/*`（id/校验/编译/渲染/变更/事务写）+ `toolset.ts`（31 工具规格） |
+| `src/dsh/` | DSH 适配层：真实 `ToolDefinition`（output schema + presenters + 审批） |
+| `src/cli/` | CLI（构建后 `lib/cli/index.js`，`bin: normify`），只依赖 core |
+| `lib/` | 构建产物（`tsc` 输出；**不入 git**，随发行包发布） |
+| `skills/normify-gen/` | 薄技能入口 `SKILL.md`（≤150 行）+ `references/`（格式/校验/配方/迁移/示例） |
+| `tests/` | 6 套 node 测试 + 性能冒烟 |
+| `docs/` | `SPEC.zh-CN.md`（唯一规范真源）+ COMPATIBILITY / MIGRATION / RELEASE-CHECKLIST / DIAGNOSTICS |
 | `vendor/` | 内联第三方（schemastery / cosmokit，按相对路径加载） |
 
 ## 14. 兼容性与排错
@@ -465,6 +473,8 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 | DSH | `0.2.1-rc.5`（engines `>=0.2.1-rc.1 <0.3.0`；peer：`@deepseek-ai/cordis ^4`） |
 | 支持策略 | **只支持当前最新 DSH 线（0.2.x）**；0.1.x 环境请留在 0.5.4 |
 | Node.js | ≥ 18 |
+
+> 完整兼容矩阵与验证证据：[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)；升级说明：[docs/MIGRATION.md](docs/MIGRATION.md)。
 
 **常见问题**
 
@@ -481,12 +491,50 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 - **只读仓库**：生成器遵守"只读源码"铁律 —— 结构数据只写入 `normify-<slug>/`，绝不修改被分析的仓库。
 - `source` 字段只记录**仓库相对路径**与行号，不会把源码内容复制进结构数据。
 
-## 16. 文档索引
+## 16. CLI（跨 agent / CI）
+
+CLI 与 DSH 工具**同引擎**，不依赖 DSH 运行时：适合终端、CI 与其他 agent。
+`lib/` 不入 git，从源码用 CLI 前先 `npm run build`（npm 发行包内已含 `lib/`）。
+
+```bash
+node lib/cli/index.js --help        # 命令、选项与退出码
+node lib/cli/index.js tools         # JSON：31 个工具
+node lib/cli/index.js verify --project demo   # receipt.sha256 → receipt → artifacts 逐件复算
+
+# 常用：结构项目用 --project <slug> 或 --dir <结构目录绝对路径>
+node lib/cli/index.js init --project demo --root-id demo
+node lib/cli/index.js validate --project demo --repo-root F:/repo
+node lib/cli/index.js build --project demo    # tree/outline/api-index/structure-manifest/receipt
+node lib/cli/index.js render --project demo --out normify.html
+node lib/cli/index.js sync --project demo --repo-root F:/repo --diff HEAD~1
+node lib/cli/index.js change-open --project demo --args-json '{"title":{"zh":"…","en":"…"},"acceptance":["…"]}'
+node lib/cli/index.js call <tool-name> --args-json '<json>'   # 直接调用任意工具
+```
+
+| 命令 | 用途 |
+| --- | --- |
+| `init` / `status` / `list` / `get` / `search` / `brief` | 初始化 / 概览 / 列模块 / 读模块 / 检索 / 开发指引 |
+| `validate` / `check` | L2 全项目校验 / 设计预检 |
+| `build` / `verify` / `render` | 编译 5 件产物 / 回执链自证 / 渲染单文件 HTML |
+| `sync` | 增量同步规划（只读） |
+| `change-open` / `change-list` / `change-close` | 变更日志与 0 error 收尾 |
+| `project-list` / `policy` / `help` / `tools` / `call` | 项目清单 / 读 policy / 帮助 / 工具清单 / 直调工具 |
+
+- 安装后可直接用 `normify <command>`（`bin` 映射 `lib/cli/index.js`）；未安装时用 `node lib/cli/index.js`。
+- 输出默认 JSON；`--quiet` 输出单行 JSON。**退出码是稳定契约**：
+  `0` 成功；`2` 校验/L2 错误（含 `verify` 不一致）；`4` 参数/用法错误；`5` 其它失败；`6` 安全拒绝。
+- `build --verify-only` / 工具 `normify_build{verify_only:true}` 只校验回执链、不重编译。
+
+## 17. 文档索引
 
 | 文档 | 内容 |
 | --- | --- |
-| [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
-| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
+| [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（数据模型 / 源格式 / 产物 / 校验 / 生成器 / 渲染器 / 插件工程，唯一真源） |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | DSH × 插件版本 × 验证状态（含 pack-smoke 证据） |
+| [`docs/MIGRATION.md`](docs/MIGRATION.md) | 0.5.4→0.5.5、0.5.x→0.6.0、0.7.0 预告 |
+| [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md) | 发布前逐项检查清单（构建/测试/冒烟/checksum/tag） |
+| [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) | 诊断码总表（由 `scripts/gen-diagnostics.mjs` 从源码生成） |
+| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 薄技能入口（`references/` 放格式/校验/配方/迁移/示例） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.5） |
 | [`docs/VIDEO-SCRIPT.zh-CN.md`](docs/VIDEO-SCRIPT.zh-CN.md) | **视频文字稿**（10 分钟完整版 + 60 秒速览 + 数字备忘卡 + 录制清单） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
