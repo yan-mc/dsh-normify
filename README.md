@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.4-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.5-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
-  <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
+  <img src="https://img.shields.io/badge/DSH-0.2.1--rc.5-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
   <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
 </p>
@@ -64,7 +64,7 @@ Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的
 | --- | --- | --- |
 | **L1** | 每次写入 | 必填字段、id 文法、uid、parent 一致性、双语长度、source/apis/deps 形状、state/replacement |
 | **L2** | `normify_validate` | 全项目：唯一性、文件↔id 映射、叶子/非叶子规则、API 键唯一、依赖目标、环、渲染数据交叉校验、架构规则、变更日志、（可选）仓库证据（source 存在性 + 指纹一致） |
-| **L3** | `normify_build` | 任何 error 都不产出产物；产出即 SHA-256 冻结进 `receipt.json` |
+| **L3** | `normify_build` | 任何 error 都不产出产物；产出即逐件写入 SHA-256 回执（`receipt.json` + `receipt.sha256` sidecar） |
 
 每条诊断都带 `severity / code / message / subject / evidence / supportedFixes` —— **AI 可自行修复**。
 
@@ -75,7 +75,7 @@ Normify 是 **DeepSeek Harness（DSH）插件**，也是**一套写给 AI 用的
 - **API 直连**：叶子框内展示 API 明细行，箭头锚定到具体 API 行的端口；同一 API 行上的多条边自动扇形分离。
 - 跨层依赖聚合为虚线 `×N`（默认隐藏，工具栏或 `?agg=1` 开启，悬停看明细）。
 - 深链接：`#module=<id>`、`#api=<rpc:key>`、`#view=outline`、`?lang=zh|en`、`?agg=1`；缩放 / 悬停高亮 / 明暗主题。
-- **几何自检**：仓库自带 `check-geometry.mjs`，逐层断言"线不出界 / 不贴框 / 不穿框 / 不压线"。
+- **几何自检**：渲染器内置逐层几何断言思路（线不出界 / 不贴框 / 不穿框 / 不压线）；早期用于校验截图的独立脚本未随仓库分发。
 
 ### 2.4 伴随开发：先建图后编程
 
@@ -105,7 +105,21 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 3. 最新变化
 
-### v0.5.4 · 把"第二轮 A/B 实测"暴露的 4 个工具缺陷修掉（当前版本）
+### v0.5.5 · P0 止血：兼容当前 DSH 0.2.x（当前版本）
+
+- **兼容当前最新 DSH**：`engines.dsh` 改为 `>=0.2.1-rc.1 <0.3.0`（目标运行时 DSH `0.2.1-rc.5`）；
+  只支持当前 DSH 线，0.1.x 环境请留在 0.5.4。
+- **安全修复**：`normify_sync` 的 `diff` 范围拒绝以 `-` 开头的选项注入；`normify_render` 的 `out` 只接受纯文件名
+  （越界报 `render/invalid-out`）；`normify_fingerprint` 的 `source` 只接受仓库内 POSIX 相对路径，越界/符号链接按缺失处理。
+- **L3 回执可自证**：`receipt.json` 不再把自身写入 `artifacts`，新增同目录 `receipt.sha256` sidecar，四件产物可逐件复算。
+- **数据正确性**：`id` 末段保留段名 `index` 写入前拒绝（`structure/id-reserved`）、空 batch / 孤儿 upsert /
+  坏文件读取显式报错（`args/empty-batch` / `structure/parent-not-exist`）、环检测回归 L2
+  （`structure/dependency-cycle`）、delete 型变更单不再死锁（`change_close` 可用）。
+- **渲染安全**：HTML `<title>` 转义与 `/s+/g` 修正；写盘统一原子写。
+- **文档**：安装段改为 DSH 0.2.x 插件管理器/插件市场；兼容表、工具数（31）、源码规模（17 个 `.ts` / 约 7.6k 行）、
+  测试套数（5 套）口径统一。
+
+### v0.5.4 · 把"第二轮 A/B 实测"暴露的 4 个工具缺陷修掉
 
 第二轮 A/B 换了题目（**表格公式引擎 + CLI**，同一份规范、隐藏黑盒 88 项、外加**差分模糊测试**）。
 两组最终 B 88/88、A 87/88（差异只有一条 §5.2 语义）；这一版修的是**工具侧**新暴露的 4 个坑：
@@ -200,47 +214,38 @@ change_open → brief → check → module_batch(state=planned) → 【写代码
 
 ## 5. 安装
 
-### 方式 A：从压缩包安装（推荐，不依赖源码目录）
+Normify 以 **DSH bundle** 形式分发，只支持 **DSH 0.2.x**（`engines.dsh: ">=0.2.1-rc.1 <0.3.0"`）。
+安装后请**新开一个 DSH 会话**：工具列表在会话启动时快照。
+
+### 方式 A：插件管理器 / 插件市场（推荐）
+
+在 DSH 会话里让 AI 通过插件管理器安装（`plugin_manager` 的 `install_bundle`），目标可以是：
+
+- **本仓库目录**（从源码安装时先 `npm install`；`lib/` 已随仓库提供，无需再 build）；
+- **本地发行包** `dist/dsh-external-dsh-normify-0.5.5.tgz`（或对应 Release 附件），安装 spec 以插件管理器提示为准；
+- **插件市场条目**（若你配置的市场索引已收录本插件，可直接在插件市场页面安装）。
+
+安装由 DSH 插件管理器完成：校验 `engines` → 写入 profile → 登记 bundle。
+**不需要手工编辑 profile 的 `package.json`、`node_modules` 或 `cordis.patch.yml`** ——
+插件行由 bundle 自身声明（`package.json > dsh.bundle.patch: ./cordis.patch.yml`）。
+
+### 方式 B：`dsh plugin` CLI
 
 ```bash
-# 1) 构建发行包（或直接使用仓库 Releases 里的 tgz）
-cd dsh-normify && npm install && npm run build && npm pack
-
-# 2) 把包解到目标 profile 的 node_modules（DSHEAC AIO 6.9.x 的 profile 是 web-desktop）
-#    <profile>/node_modules/@dsh-external/dsh-normify/
-
-# 3) 编辑 <profile>/package.json：
-#    dependencies       增加  "@dsh-external/dsh-normify": "file:<tgz 绝对路径>"
-#    dsh.profile.bundles 增加  "@dsh-external/dsh-normify"
-
-# 4) 重启 DSH 桌面端（工具在会话启动时快照，需新会话）
+# <profile> 为当前 DSH profile 名（可在 ~/.dsh/profiles/ 下查看）
+dsh plugin --profile <profile> add <dsh-normify 包目录或 .tgz 的绝对路径>
 ```
 
-插件行的注册**由 bundle 自身完成**：`package.json > dsh.bundle.patch: ./cordis.patch.yml`，
-DSH 会把它插进 cordis 树，**不需要手改 profile 的 `cordis.patch.yml`**。
-
-### 方式 B：`dsh plugin`（自动登记 bundle）
-
-```bash
-dsh plugin --profile web-desktop add <dsh-normify 目录的绝对路径>
-# 或：dsh plugin --profile web-desktop add link:F:/dsh-normify
-```
-
-### 方式 C：开发模式（改源码 → 重启即生效）
-
-把 profile 的依赖写成 `link:<本仓库绝对路径>`，并在 `node_modules` 里建立指向本仓库的
-目录联接（junction）。此时插件按**真实路径**解析依赖，因此本仓库需要 `node_modules/yaml`（`npm install` 即可）。
-
-> ⚠️ **注意**：DSHEAC AIO **应用升级会按 `resources/profile-seed` 重播种 profile**，
-> 已安装的插件登记会被抹掉；升级后请用方式 A/B 重装一次。
+CLI 参数以当前 DSH 版本自带的 `dsh plugin --help` 为准；不同 DSH build 的语法可能略有差异。
 
 ### 验证安装
 
-```bash
-# 在 profile 目录下用裸包名导入，应打印 31 个工具 + 技能
-node -e "import('@dsh-external/dsh-normify').then(m=>console.log(m.name))"
-# 或在 DSH 里直接问 AI：「列出你手上的 normify 工具」
+```text
+在 DSH 新会话里直接问 AI：列出你手上的 normify 工具（应看到 31 个）
 ```
+
+> ⚠️ 版本不兼容时插件管理器会报 `incompatible-version` 并回滚：请使用 **0.5.5+**（支持 DSH 0.2.x）；
+> 仍需运行在 0.1.x 的旧环境请保留 0.5.4。
 
 ## 6. 快速开始
 
@@ -277,7 +282,8 @@ normify_tree_list → normify_module_upsert（根 + 一级子模块）
 | `changes/<id>.json` | 开发变更日志（随结构目录一起回档） |
 | `tree.json` | 编译产物：模块字典 + API 索引 + 边 + 渲染数据 + 规则 + 变更统计 |
 | `outline.md` / `api-index.json` | 人类可读大纲 / API 索引 |
-| `receipt.json` | 产物 SHA-256 冻结回执（含 stats 与 warning 摘要） |
+| `receipt.json` | 产物 SHA-256 冻结回执（含 stats 与 warning 摘要；不包含自身） |
+| `receipt.sha256` | `receipt.json` 自身的校验和（sidecar，供外部复算） |
 | `normify.html` | 单文件交互式架构图 |
 
 ## 7. 31 个工具
@@ -430,7 +436,7 @@ rules:
 - **API 直连**：叶子框内展示 `max_api_rows` 行 API（0 = 全部，也是缺省），箭头锚定到具体 API 行的端口。
 - **跨层聚合**：跨层依赖默认聚合为虚线 `×N`（`?agg=1` 或工具栏开启，悬停看明细）。
 - **viewBox 自适应**：由全部几何包围盒动态计算（线不出视口）；缩放 / 适配 / 100%。
-- **几何自检**：`check-geometry.mjs` 逐层断言五项指标（越界 / 贴边 / 穿框 / 贴组框 / 线压线）。
+- **几何自检**：渲染器内置逐层几何断言思路（越界 / 贴边 / 穿框 / 贴组框 / 线压线）；早期独立校验脚本未随仓库分发。
   本项目自身 129 模块 / 28 层：**线压线 0 处**，27/28 层五项全 0。
 
 ## 13. 工程与测试
@@ -439,16 +445,16 @@ rules:
 npm install          # 安装 devDependencies（typescript / @types/node / cordis / schemastery / cosmokit）
 npm run build        # src/ → lib/（tsc；两条路径：本地 vendor-ts 或 npm）
 npm run typecheck    # tsc --noEmit
-npm test             # engine-e2e.mjs + companion-e2e.mjs（不依赖 DSH 的 node 端到端）
+npm test             # 5 套：engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4（不依赖 DSH 的 node 端到端）
 node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工具 + provider 安全命名
 ```
 
 | 目录 | 内容 |
 | --- | --- |
-| `src/` | TypeScript 源码（16 个模块，7168 行）：`index.ts` / `tools.ts` / `engine/*` |
+| `src/` | TypeScript 源码（17 个 `.ts`，约 7.6k 行）：`index.ts` / `tools.ts` / `engine/*` |
 | `lib/` | 编译产物（`tsc` 输出，随包发布） |
 | `skills/normify-gen/SKILL.md` | 生成器技能（铁律、流程、粒度、可读性配方） |
-| `tests/` | 两个端到端：引擎链路 + 伴随开发闭环（8 个环节） |
+| `tests/` | 5 套 node 端测试：引擎链路 / 伴随开发闭环（8 个环节）/ regression-0.5.2 / 0.5.3 / 0.5.4 |
 | `docs/SPEC.zh-CN.md` | 正式规范（数据模型 / 源格式 / 产物 / 校验 / 生成器 / 渲染器 / 插件工程） |
 | `vendor/` | 内联第三方（schemastery / cosmokit，按相对路径加载） |
 
@@ -456,15 +462,14 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 
 | 项 | 要求 |
 | --- | --- |
-| DSH | `0.1.5-rc.2`（peer：`@deepseek-ai/cordis ^4`；`dsh-tools` / `dsh-skill` 可选） |
-| DSHEAC AIO | 6.9.x（profile `web-desktop`） |
+| DSH | `0.2.1-rc.5`（engines `>=0.2.1-rc.1 <0.3.0`；peer：`@deepseek-ai/cordis ^4`） |
+| 支持策略 | **只支持当前最新 DSH 线（0.2.x）**；0.1.x 环境请留在 0.5.4 |
 | Node.js | ≥ 18 |
 
 **常见问题**
 
-- **装了但工具不出现** → 工具列表在**会话启动时快照**：请**新开一个会话**（或重启桌面端）。
-- **升级 AIO 后插件消失** → 应用升级会按 `resources/profile-seed` 重播种 profile，重装一次即可。
-- **`Cannot find package 'yaml'`** → `link:` 安装时按真实路径解析依赖，请在本仓库执行一次 `npm install`。
+- **装了但工具不出现** → 工具列表在**会话启动时快照**：请**新开一个会话**（或重启 DSH）。
+- **安装报 `incompatible-version`** → 插件版本与 DSH 运行时的 engines 区间不符：请升级插件到 0.5.5+；旧 DSH 0.1.x 请留在 0.5.4。
 - **`evidence/fingerprint-drift`** → 源码变了而结构数据没跟上：`normify_sync` 看漂移清单，`normify_module_refresh` 重算指纹。
 - **`structure/leaf-too-coarse`** → 不是错，是提示：该叶子还能继续拆（推荐拆到"单一功能单元"）。
 
@@ -482,7 +487,7 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.4） |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.5） |
 | [`docs/VIDEO-SCRIPT.zh-CN.md`](docs/VIDEO-SCRIPT.zh-CN.md) | **视频文字稿**（10 分钟完整版 + 60 秒速览 + 数字备忘卡 + 录制清单） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略 |

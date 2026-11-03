@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.4-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.5-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
-  <img src="https://img.shields.io/badge/DSH-0.1.5--rc.2-7C3AED?style=flat-square" alt="DSH">
+  <img src="https://img.shields.io/badge/DSH-0.2.1--rc.5-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
   <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
 </p>
@@ -21,7 +21,7 @@
 
 Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a development workflow written for AI agents**:
 
-- **For the AI**: a `normify-gen` skill plus **30 `normify_*` tools** — the model turns a repository into a module-tree
+- **For the AI**: a `normify-gen` skill plus **31 `normify_*` tools** — the model turns a repository into a module-tree
   structure database, then keeps it alive through development (design-first planned trees → implement → close the change).
 - **For the engine**: zero-tolerance validation (L1 write-time / L2 project-wide / L3 frozen artifacts),
   deterministic compilation (`tree.json` and three sibling artifacts with SHA-256 frozen receipts) and
@@ -68,7 +68,7 @@ Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a develo
 | --- | --- | --- |
 | **L1** | every write | required fields, id grammar, uid, parent consistency, bilingual lengths, source/apis/deps shapes, state/replacement |
 | **L2** | `normify_validate` | uniqueness, file↔id mapping, leaf/non-leaf rules, globally unique API keys, dependency targets, cycles, render-data cross checks, policy, change log, optional repository evidence (source existence + fingerprint match) |
-| **L3** | `normify_build` | nothing is emitted when any error exists; emitted artifacts are SHA-256 frozen into `receipt.json` |
+| **L3** | `normify_build` | nothing is emitted when any error exists; emitted artifacts get SHA-256 receipts (`receipt.json` plus a `receipt.sha256` sidecar) |
 
 Every diagnostic carries `severity / code / message / subject / evidence / supportedFixes` so the **AI can fix it itself**.
 
@@ -80,8 +80,8 @@ Every diagnostic carries `severity / code / message / subject / evidence / suppo
   multiple edges sharing one API row are fanned apart automatically.
 - Cross-level dependencies aggregate into dashed `×N` edges (hidden by default; toggle with the toolbar or `?agg=1`).
 - Deep links: `#module=<id>`, `#api=<rpc:key>`, `#view=outline`, `?lang=zh|en`, `?agg=1`; zoom, hover highlight, light/dark theme.
-- **Geometry self-check**: the repo ships `check-geometry.mjs`, which asserts per level that lines stay inside the
-  viewBox, do not hug, cross or overlap boxes.
+- **Geometry self-check**: the renderer is built around per-level geometry assertions (lines stay inside the viewBox,
+  do not hug, cross or overlap boxes); the early standalone checker script is not shipped in this repository.
 
 ### 2.4 Companion development — design first
 
@@ -111,7 +111,25 @@ Once installed, `normify_validate` / `normify_build` / `normify_check` all enfor
 
 ## 3. Release highlights
 
-### v0.5.4 — the four tool-side defects found by the second A/B run (current)
+### v0.5.5 — P0 stop-the-bleeding: support the current DSH 0.2.x (current)
+
+- **Current DSH only**: `engines.dsh` is now `>=0.2.1-rc.1 <0.3.0` (target runtime: DSH `0.2.1-rc.5`).
+  Only the current DSH line is supported; stay on 0.5.4 if you still run 0.1.x.
+- **Security fixes**: `normify_sync` rejects `-`-prefixed git diff ranges (option injection); `normify_render`
+  accepts a plain file name for `out` only (out-of-root names fail with `render/invalid-out`); and
+  `normify_fingerprint` accepts repo-relative POSIX source paths only — out-of-root paths and symlinks are treated
+  as missing rather than read.
+- **Self-verifiable L3 receipts**: `receipt.json` no longer lists itself in `artifacts`; a sibling `receipt.sha256`
+  sidecar covers it, so all four artifacts can be recomputed independently.
+- **Data correctness**: reserved `index` last segment rejected before writing (`structure/id-reserved`), explicit
+  errors for empty batches / orphan upserts / unreadable files (`args/empty-batch` / `structure/parent-not-exist`),
+  cycle detection back in L2 (`structure/dependency-cycle`), and `delete`-only changes no longer deadlock
+  `change_close`.
+- **Renderer safety**: HTML `<title>` escaping and the `/s+/g` fix; atomic writes for artifact output.
+- **Docs**: installation rewritten for the DSH 0.2.x plugin manager / plugin market; compatibility table, tool count
+  (31), source size (17 `.ts` files / ~7.6k lines) and test suites (5) aligned.
+
+### v0.5.4 — the four tool-side defects found by the second A/B run
 
 Round 2 switched the project (a **spreadsheet formula engine + CLI**; same spec discipline, 88 hidden black-box
 checks plus **differential fuzzing**). Final scores: B 88/88, A 87/88 (the single gap being one §5.2 ordering rule).
@@ -215,47 +233,42 @@ extra 41-module / 110-API / 10-layer architecture dataset — and hit the four r
 
 ## 5. Installation
 
-### Option A — install from a packed tarball (recommended)
+Normify ships as a **DSH bundle** and supports **DSH 0.2.x only** (`engines.dsh: ">=0.2.1-rc.1 <0.3.0"`).
+Open a **new DSH session** after installing: the tool list is snapshotted when a session starts.
+
+### Option A — plugin manager / plugin market (recommended)
+
+In a DSH session, ask the agent to install it through the plugin manager (`plugin_manager` → `install_bundle`).
+The target can be:
+
+- **this repository directory** (run `npm install` first when installing from source; `lib/` is already shipped,
+  no build step needed);
+- **the packed tarball** `dist/dsh-external-dsh-normify-0.5.5.tgz` (or the matching Release asset) — the exact
+  install spec is the one suggested by the plugin manager;
+- **a plugin-market entry**, if the market index you configured already lists this plugin.
+
+The DSH plugin manager validates `engines`, writes the profile and registers the bundle.
+**You never edit the profile's `package.json`, `node_modules` or `cordis.patch.yml` by hand** — the plugin row is
+declared by the bundle itself (`package.json > dsh.bundle.patch: ./cordis.patch.yml`).
+
+### Option B — `dsh plugin` CLI
 
 ```bash
-# 1) build the tarball (or grab it from the repository Releases)
-cd dsh-normify && npm install && npm run build && npm pack
-
-# 2) unpack it into the target profile's node_modules
-#    <profile>/node_modules/@dsh-external/dsh-normify/
-
-# 3) edit <profile>/package.json
-#    dependencies         add  "@dsh-external/dsh-normify": "file:<abs path to tgz>"
-#    dsh.profile.bundles  add  "@dsh-external/dsh-normify"
-
-# 4) restart the DSH desktop app (the tool list is snapshotted when a session starts)
+# <profile> is the current DSH profile name (see ~/.dsh/profiles/)
+dsh plugin --profile <profile> add <absolute path to the dsh-normify directory or .tgz>
 ```
 
-The plugin row is registered **by the bundle itself** (`package.json > dsh.bundle.patch: ./cordis.patch.yml`),
-so you never edit the profile's `cordis.patch.yml` by hand.
-
-### Option B — `dsh plugin`
-
-```bash
-dsh plugin --profile web-desktop add <absolute path to dsh-normify>
-# or: dsh plugin --profile web-desktop add link:F:/dsh-normify
-```
-
-### Option C — development mode (edit source, restart, done)
-
-Use a `link:` dependency pointing at this repository plus a directory junction in `node_modules`.
-A `link:` install resolves dependencies against the **real path**, so this repository needs `node_modules/yaml`
-(plain `npm install`).
-
-> ⚠️ **Note**: upgrading the DSHEAC AIO desktop app re-seeds the profile from `resources/profile-seed`,
-> which wipes the plugin registration — just re-install afterwards.
+CLI arguments follow the `dsh plugin --help` shipped with your current DSH build; syntax may differ slightly
+between builds.
 
 ### Verify
 
-```bash
-# from the profile directory, importing by bare package name should print the plugin name
-node -e "import('@dsh-external/dsh-normify').then(m=>console.log(m.name))"
+```text
+In a new DSH session, ask the agent: list the normify tools you have (you should see 31)
 ```
+
+> ⚠️ On a version mismatch the plugin manager reports `incompatible-version` and rolls back: use **0.5.5+**
+> (supports DSH 0.2.x); if you still need DSH 0.1.x, stay on 0.5.4.
 
 ## 6. Quick start
 
@@ -295,7 +308,8 @@ Artifacts (inside the structure directory `normify-<slug>/`):
 | `changes/<id>.json` | development change log, archived together with the structure |
 | `tree.json` | compiled: module dictionary + API index + edges + layouts + policy + change stats |
 | `outline.md` / `api-index.json` | human-readable outline / API index |
-| `receipt.json` | SHA-256 frozen receipt (stats + warning summary) |
+| `receipt.json` | SHA-256 frozen receipt (stats + warning summary; does not include itself) |
+| `receipt.sha256` | checksum of `receipt.json` itself (sidecar, for external recomputation) |
 | `normify.html` | the single-file interactive map |
 
 ## 7. The 31 tools
@@ -306,7 +320,8 @@ Artifacts (inside the structure directory `normify-<slug>/`):
 | **Read** | `normify_tree_list` | list projects and tree roots |
 | | `normify_module_get` / `normify_module_list` | read one module / list modules by parent or tree |
 | | `normify_search` / `normify_deps_find` / `normify_outline` | search, reverse lookup ("who depends on me"), rebuild `outline.md` |
-| **Write** | `normify_module_upsert` | create/update a module (write-time L1 validation, automatic file-form promotion) |
+| **Write** | `normify_project_init` | initialise a structure project (directory + default policy; optional planned root) — the zeroth step for a new project |
+| | `normify_module_upsert` | create/update a module (write-time L1 validation, automatic file-form promotion) |
 | | `normify_module_delete` / `normify_module_promote` | delete a subtree (with dangling-edge warnings) / promote a leaf |
 | **Evolve** | `normify_module_patch` | partial update (`expect_updated_at` guard + `dry_run`) |
 | | `normify_module_batch` | atomic batch upsert/patch (whole-batch rollback) |
@@ -415,16 +430,16 @@ before the code lands is refused.
 npm install          # devDependencies (typescript / @types/node / cordis / schemastery / cosmokit)
 npm run build        # src/ → lib/ via tsc
 npm run typecheck    # tsc --noEmit
-npm test             # engine-e2e.mjs + companion-e2e.mjs (DSH-independent end-to-end)
+npm test             # 5 suites: engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 (DSH-independent, node)
 node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-safe names
 ```
 
 | Path | Content |
 | --- | --- |
-| `src/` | TypeScript sources (16 modules, ~7.2k lines): `index.ts`, `tools.ts`, `engine/*` |
+| `src/` | TypeScript sources (17 `.ts` files, ~7.6k lines): `index.ts`, `tools.ts`, `engine/*` |
 | `lib/` | compiled output (shipped) |
 | `skills/normify-gen/SKILL.md` | the generator skill (rules, workflow, granularity, readability) |
-| `tests/` | two end-to-end suites: engine path + companion loop (eight stages) |
+| `tests/` | five node test suites: engine path / companion loop (eight stages) / regression-0.5.2 / 0.5.3 / 0.5.4 |
 | `docs/SPEC.zh-CN.md` | formal specification (data model / source format / artifacts / validation / generator / renderer) |
 | `vendor/` | vendored schemastery + cosmokit (loaded by relative path) |
 
@@ -432,13 +447,13 @@ node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-
 
 | Item | Requirement |
 | --- | --- |
-| DSH | `0.1.5-rc.2` (peer: `@deepseek-ai/cordis ^4`; `dsh-tools` / `dsh-skill` optional) |
-| DSHEAC AIO | 6.9.x (profile `web-desktop`) |
+| DSH | `0.2.1-rc.5` (engines `>=0.2.1-rc.1 <0.3.0`; peer: `@deepseek-ai/cordis ^4`) |
+| Support policy | **only the current DSH line (0.2.x)**; stay on 0.5.4 if you still run 0.1.x |
 | Node.js | ≥ 18 |
 
-- **Installed but no tools** → the tool list is snapshotted at session start: open a **new session** (or restart the app).
-- **Plugin disappears after an app upgrade** → the AIO re-seeds the profile from `resources/profile-seed`; re-install.
-- **`Cannot find package 'yaml'`** → with a `link:` install, dependencies resolve against the real path; run `npm install` in this repo.
+- **Installed but no tools** → the tool list is snapshotted at session start: open a **new session** (or restart DSH).
+- **Install fails with `incompatible-version`** → the plugin version is outside the DSH runtime's engines range:
+  upgrade the plugin to 0.5.5+; on DSH 0.1.x stay on 0.5.4.
 - **`evidence/fingerprint-drift`** → the code moved ahead of the structure data: run `normify_sync`, then `normify_module_refresh`.
 - **`structure/leaf-too-coarse`** → not an error: that leaf can be split further (towards single functional units).
 
@@ -456,7 +471,7 @@ node ci-contract-check.cjs   # bundle declaration + exactly 31 tools + provider-
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (Chinese) |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | the generator skill (the AI's playbook) |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.4) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.5) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | contributing guide |
 | [`SECURITY.md`](SECURITY.md) | security policy |
 

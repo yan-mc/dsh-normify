@@ -7,6 +7,46 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.5.5] - 2026-11-03
+
+Phase 0「P0 止血」：对齐当前最新 DSH（0.2.x），修复审计发现的 P0 级安全、回执与数据正确性问题。
+
+### 兼容
+
+- `engines.dsh` 改为 `>=0.2.1-rc.1 <0.3.0`：只支持当前 DSH 线（目标运行时 DSH `0.2.1-rc.5`）；
+  仍需运行在 0.1.x 的旧环境请留在 0.5.4。
+- 安装文档改为 DSH 0.2.x 的插件管理器 / 插件市场 / `dsh plugin`，移除手改 profile 的过时流程。
+
+### 安全
+
+- `normify_sync`：`diff` 范围拒绝以 `-` 开头的选项注入（只接受 revision / `A..B` / `A...B` 文法）。
+- `normify_render`：`out` 只接受纯文件名，越界报 `render/invalid-out`。
+- `normify_fingerprint`：`source` 只接受仓库内 POSIX 相对路径；越界路径与符号链接按缺失处理，不再读取。
+
+### L3 回执
+
+- `receipt.json` 不再把自身写入 `artifacts`（自哈希逻辑上不可能自洽）；新增同目录 `receipt.sha256`
+  sidecar，四件产物可逐件复算。
+
+### 数据正确性
+
+- `id` 末段保留段名 `index`：写入前拒绝（`structure/id-reserved`），避免与父容器同路径静默覆盖。
+- 空 `module_batch`、孤儿 `module_upsert`、结构文件读取失败：显式报错（`args/empty-batch` /
+  `structure/parent-not-exist`），不再静默成功。
+- 环检测回归 L2：`normify_validate` 直接报环（`structure/dependency-cycle`），不再依赖渲染阶段才发现。
+- `delete` 型变更单不再必然触发 `change/module-missing` 死锁，`change_close` 可正常收尾。
+
+### 渲染与工程
+
+- HTML `<title>` 转义、`/s+/g` → `/\s+/g` 正则修正；JSON `<` 转义保持。
+- 写盘统一原子写（tmp + rename），中断不留半文件。
+
+### 文档
+
+- README / README_EN：安装段（DSH 0.2.x + 插件管理器）、兼容表、工具数（31）、源码规模（17 个 `.ts` / 约 7.6k 行）、
+  测试套数（5 套）口径统一；移除仓库中不存在的 `check-geometry.mjs` 卖点；补齐英文版缺失的 `normify_project_init` 工具行。
+- README 徽章版本更新为 0.5.5 / DSH 0.2.1-rc.5。
+
 ## [0.5.4] - 2026-09-13
 
 本版修复**第二轮 A/B 对照实验**（题目：表格公式引擎 + CLI）暴露的 4 个**工具侧**缺陷。
