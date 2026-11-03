@@ -7,6 +7,33 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.6.0] - 2026-11-03
+
+Phase 1「内部重构」：公开工具名/数据格式不变，新增 CLI、结构 SBOM、语义 diff、回执自证与现代化 DSH 适配层。
+
+### 架构
+
+- src 分层为 core（纯 Node 引擎，零 DSH 依赖）/ dsh（DSH 适配层）/ cli（跨 agent CLI）；ADR-0009 记录 Phase 1 单包内部分层、Phase 2 再抽 monorepo。
+- lib/ 不再入库：构建由 node node_modules/typescript/bin/tsc -p tsconfig.json（或 npm run build）产出。
+- 新增 src/core/primitives.ts：7 原语面（project/read/write/check/build/render/change）opt-in（config.toolset="core"；默认仍是 31 工具旧面，0.7.0 切换默认）。
+
+### 新增能力
+
+- **CLI**：normify（init/status/list/get/search/brief/validate/check/build/verify/render/sync/change/policy/diff/call/tools），JSON 输出 + 退出码约定；normify diff --from <a> --to <b> 语义化结构 diff（--fail-on-change / --fail-on-breaking 退出码 3）。
+- **结构 SBOM**：structure-manifest.json（模块/API/依赖清单 + 生成器版本 + 其它产物哈希）；产物变五件 + receipt.sha256 sidecar，形成 source→manifest→产物→receipt→sidecar 的自证链；normify verify 或 normify_build{verify_only:true} 可逐件复算。
+- **DSH 适配层**：真实 output.schema、presentationMeta、presentCall/presentResult 卡片、只读工具 isConcurrencySafe、destroy 操作一次性审批（tools/pre-execute ask）；bundle 增加 locale/icon/exports 上架元数据；不引 dsh-tools 运行时依赖（ADR-0010）。
+- **测试与 CI**：tests/core-unit.mjs（79 用例）、tests/platform-contract.mjs（真实 ToolRuntime，22 断言）、tests/perf-smoke.mjs；CI fast/integration/contract-next 矩阵；scripts/dsh-contract-diff.mjs + 每周 dsh-watch 契约漂移检测。
+- **技能**：normify-gen 321 行 → 115 行薄入口 + references/（format/validation/recipes/migration/examples）；文档体系 COMPATIBILITY/MIGRATION/RELEASE-CHECKLIST/DIAGNOSTICS。
+
+### 性能
+
+- 写路径索引复用：300 模块 batch 写入 42.8s → ~0.7s；单 patch 645ms → ~120ms；validate 310ms → ~100ms。
+
+### 修复
+
+- 单段根模块父晋升时先写后 rm 自删（根文件消失）；修正 depParam.label 误标必填。
+- （0.5.5 已修）安全三破口、receipt 自哈希、index 保留段、空 batch/孤儿 upsert/坏文件读、环检测、delete change 死锁、HTML 注入、原子写。
+
 ## [0.5.5] - 2026-11-03
 
 Phase 0「P0 止血」：对齐当前最新 DSH（0.2.x），修复审计发现的 P0 级安全、回执与数据正确性问题。

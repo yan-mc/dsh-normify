@@ -17,6 +17,8 @@ export interface Config {
     devCompanionReminderAfter: number;
     /** destroy 类工具（module_delete / layout_delete）是否走一次性审批（默认开，防误删）。 */
     approveDestructive: boolean;
+    /** 工具面：full=31 个旧工具（默认，0.6 兼容）；core=7 个原语（0.7 目标面，0.6 起 opt-in）。 */
+    toolset: 'full' | 'core';
 }
 export const Config = z.object({
     rootDir: z.string().default('.'),
@@ -24,6 +26,7 @@ export const Config = z.object({
     devCompanionReminder: z.boolean().default(false),
     devCompanionReminderAfter: z.number().default(8),
     approveDestructive: z.boolean().default(true),
+    toolset: z.string().default('full'),
 });
 function readPluginVersion(): string {
     try {
@@ -35,7 +38,8 @@ function readPluginVersion(): string {
     }
 }
 export function apply(ctx: Context, config: Config): void {
-    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual, version: readPluginVersion() });
+    const toolset: 'full' | 'core' = config.toolset === 'core' ? 'core' : 'full';
+    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual, version: readPluginVersion(), toolset });
     installCompanionReminder(ctx, config);
     installDestructiveApproval(ctx, config);
     const skillRegistered = registerSkill(ctx);
@@ -93,6 +97,7 @@ function installCompanionReminder(ctx: Context, config: Config): void {
 }
 interface PreExecuteInfo {
     name?: string;
+    arguments?: unknown;
 }
 type PreExecuteNext = () => Promise<{ kind: string }>;
 type PreExecuteListener = (exec: PreExecuteInfo | undefined, next: PreExecuteNext) => Promise<unknown>;
@@ -106,11 +111,17 @@ interface ApprovalContext {
 function installDestructiveApproval(ctx: Context, config: Config): void {
     if (!config.approveDestructive)
         return;
-    const behaviors = toolBehaviors({ rootDir: config.rootDir, requireBilingual: config.requireBilingual });
+    const behaviors = toolBehaviors({ rootDir: config.rootDir, requireBilingual: config.requireBilingual, toolset: config.toolset === 'core' ? 'core' : 'full' });
     const anyCtx = ctx as unknown as ApprovalContext;
+    const DESTRUCTIVE_OPS = new Set(['delete', 'layout_delete']);
     anyCtx.on?.('tools/pre-execute', async (exec, next) => {
         const toolName = exec?.name;
-        if (typeof toolName !== 'string' || behaviors.get(toolName) !== 'destroy')
+        if (typeof toolName !== 'string')
+            return next();
+        const isDestroy = behaviors.get(toolName) === 'destroy';
+        const args = (exec?.arguments ?? {}) as Record<string, unknown>;
+        const isPrimitiveDelete = toolName === 'normify_write' && typeof args.op === 'string' && DESTRUCTIVE_OPS.has(args.op);
+        if (!isDestroy && !isPrimitiveDelete)
             return next();
         return {
             kind: 'ask',

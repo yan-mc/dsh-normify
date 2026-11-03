@@ -4,6 +4,7 @@
  * 工具定义构造见 ./definition.ts（与 0.2.x defineTool 输出契约等价，ADR-0010）。
  */
 import type { Context } from '@deepseek-ai/cordis';
+import { createNormifyPrimitiveTools } from '../core/primitives.js';
 import { createNormifyTools } from '../core/toolset.js';
 import type { NormifyToolSpec, ToolEnv } from '../core/toolset.js';
 import { toToolDefinition } from './definition.js';
@@ -14,10 +15,15 @@ interface ToolService {
     register?: (def: unknown) => void;
 }
 
+/** 当前 toolset 的工具规格（full=31 旧面；core=7 原语）。 */
+function specsFor(env: ToolEnv): NormifyToolSpec[] {
+    return env.toolset === 'core' ? createNormifyPrimitiveTools(env) : createNormifyTools(env);
+}
+
 /** 工具名 → 行为（read/write/destroy/idempotent），供审批/护栏使用。 */
 export function toolBehaviors(env: ToolEnv): Map<string, string> {
     const map = new Map<string, string>();
-    for (const spec of createNormifyTools(env))
+    for (const spec of specsFor(env))
         map.set(spec.name, spec.behavior);
     return map;
 }
@@ -27,6 +33,6 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
     const service = (ctx as unknown as { tools?: ToolService }).tools;
     if (service === undefined || service.register === undefined)
         return;
-    for (const spec of createNormifyTools(env))
+    for (const spec of specsFor(env))
         service.register(toToolDefinition(spec));
 }

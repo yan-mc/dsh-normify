@@ -19,3 +19,4 @@ export * from './engine/diff.js';
 export * from './engine/render.js';
 export * from './engine/companion.js';
 export * from './engine/reference.js';
+export * from './primitives.js';

@@ -58,8 +58,6 @@ const CONTRACT_BOOT_FALLBACK = 31
 // 运行时必需文件（发布包必须含；相对仓库根）
 const REQUIRED_RUNTIME_FILES = [
   'package.json',
-  'lib/index.js',
-  'lib/types/index.d.ts',
   'skills/normify-gen/SKILL.md',
   'vendor/schemastery/lib/index.mjs',
   'vendor/cosmoKit/lib/index.js'.replace('cosmoKit', 'cosmokit'), // 防拼写漂移，见 vendor/cosmokit
@@ -583,7 +581,8 @@ function tierStatic() {
   else pass('static', 'lib/fresh', `lib/ 与 src/ 逐文件对齐（${srcFiles.length} 个 ts 文件）`)
 
   // ---- S8: 工具数契约 ----
-  const toolsSrc = exists(join(root, 'lib', 'tools.js')) ? join(root, 'lib', 'tools.js') : exists(join(root, 'src', 'tools.ts')) ? join(root, 'src', 'tools.ts') : null
+  const toolCandidates = [join(root, 'lib', 'core', 'toolset.js'), join(root, 'src', 'core', 'toolset.ts'), join(root, 'lib', 'tools.js'), join(root, 'src', 'tools.ts')]
+  const toolsSrc = toolCandidates.find((x) => exists(x)) ?? null
   let toolCount = null
   if (toolsSrc) {
     const text = readFileSync(toolsSrc, 'utf8')
@@ -605,7 +604,7 @@ function tierStatic() {
     const wrong = claims.filter((c) => c.n !== names.length)
     if (wrong.length > 0) warn('static', 'tools/claims', `文档声明的工具数与实际 ${names.length} 不一致`, wrong.map((c) => `${c.label}: "${c.snippet}"`).join(' | '))
     else if (claims.length > 0) pass('static', 'tools/claims', `文档声明一致（${claims.length} 处 = ${names.length}）`)
-  } else skip('static', 'tools/count', 'lib/tools.js 与 src/tools.ts 都不存在')
+  } else skip('static', 'tools/count', '未找到工具规格源（lib/core/toolset.js / src/core/toolset.ts）')
   if (toolCount !== null) state.ctx.detectedToolCount = toolCount.length
 
   // ---- S9: dist tgz 内容（存在才查） ----
@@ -639,7 +638,7 @@ function tierStatic() {
   // ---- S10: ESM / TLA 假设 ----
   if (exists(join(root, 'lib', 'index.js'))) {
     const head = readFileSync(join(root, 'lib', 'index.js'), 'utf8').slice(0, 4096)
-    if (/\bawait\s+import\(/.test(head)) info('static', 'esm/tla', 'lib/index.js 含 top-level await（只能 dynamic import，不能 require）')
+    if (/\bawait\s+import\(/.test(head)) info('static', 'esm/tla', '插件入口含 top-level await（只能 dynamic import，不能 require）')
     if (pkg.type !== 'module') fail('static', 'esm/type', 'package.json type 必须为 module（源码为 ESM）')
     else pass('static', 'esm/type', 'type = module')
   }
@@ -722,7 +721,7 @@ function parseSimplePatchYaml(text) {
 // ---------------------------------------------------------------------------
 
 async function tierContract() {
-  section('契约档 --contract（真实 ToolRuntime + cordis Context 加载 lib/index.js）')
+  section('契约档 --contract（真实 ToolRuntime + cordis Context 加载插件入口）')
   const c = state.ctx
   const work = c.workDir
   const dir = join(work, 'contract')
@@ -798,7 +797,7 @@ async function tierContract() {
   if (!exists(pluginEntry)) return fail('contract', 'plugin', `缺少构建产物：${pluginEntry}（先 npm run build）`)
   let plug
   try { plug = await awaitImport(pluginEntry) } catch (e) {
-    return fail('contract', 'plugin/import', 'lib/index.js 动态 import 失败', firstLine(e?.message))
+    return fail('contract', 'plugin/import', '插件入口动态 import 失败', firstLine(e?.message))
   }
   for (const field of ['name', 'inject', 'Config', 'apply']) {
     if (plug[field] === undefined) fail('contract', `plugin/export:${field}`, `插件未导出 ${field}`)

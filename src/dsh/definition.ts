@@ -95,6 +95,11 @@ const TITLES: Record<string, string> = {
     normify_change_close: '关闭变更',
     normify_policy_get: '读取架构规则',
     normify_policy_upsert: '写入架构规则',
+    // 0.7 原语面（check/build/render 复用上面已有的标题）
+    normify_project: '结构项目',
+    normify_read: '读取结构',
+    normify_write: '写入结构',
+    normify_change: '结构变更',
 };
 
 const CALL_KIND: Record<string, string> = {
