@@ -989,56 +989,60 @@ async function tierBoot() {
   await mountProbe(c, { env, profile })
 }
 
+/**
+ * 真实挂载探测：用 headless profile 让 DSH 真正 mount 全部插件后主动退出。
+ * 0.5.5 起插件不再 console.log（只走 ctx.logger），所以不再以「加载日志」为判据：
+ *   - 到达 MISSING_CREDENTIAL / 模型调用阶段 = profile 合成 + 所有插件 mount 成功（含本插件）；
+ *   - 若插件 apply 抛错，DSH 会在 mount 阶段报 plugin/loader 错误，故用「无 mount 错误」反证；
+ *   - 带 DEEPSEEK_API_KEY 时若真跑通，同样算 PASS。
+ */
 async function mountProbe(c, { env, profile }) {
-  const expected = c.options.expectTools ?? c.detectedToolCount ?? CONTRACT_BOOT_FALLBACK
-  const timeoutMs = c.options.mountTimeoutMs ?? 25000
-  const marker = /\[normify\]\s+dsh-normify\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s+已加载[:：]\s*(\d+)\s*个/
+  const timeoutMs = c.options.mountTimeoutMs ?? 30000
+  const headless = profile + '-hl'
+  const init = runDsh(c, ['--profile', headless, '--from-default-profile', 'headless', '--dump-config'], { env, timeoutMs: 120000 })
+  if (init.code !== 0) return skip('boot', 'mount', 'headless 模板初始化失败，跳过真实挂载探测', firstLine(init.err || init.out))
+  // headless profile 独立，需要自己安装一次插件
+  const packDir = join(c.workDir, 'boot', 'pack')
+  const tgz = readdirSync(packDir).find((f) => f.endsWith('.tgz'))
+  if (!tgz) return skip('boot', 'mount', '未找到已打包 tgz，跳过真实挂载探测')
+  const add = runDsh(c, ['plugin', '--profile', headless, 'add', join(packDir, tgz), '--store-dir', join(c.workDir, 'boot', 'store')], { env, timeoutMs: 300000 })
+  if (add.code !== 0) return skip('boot', 'mount', 'headless profile 安装插件失败，跳过真实挂载探测', firstLine(add.err || add.out))
+
   let output = ''
-  const child = spawn(c.dshCli, ['--profile', profile], {
+  const child = spawn(c.dshCli, ['--profile', headless, 'say hi'], {
     cwd: c.workDir,
     env: { ...process.env, ...env },
     shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(c.dshCli),
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  let exited = false
-  let exitCode = null
   child.stdout.on('data', (d) => { output += d.toString() })
   child.stderr.on('data', (d) => { output += d.toString() })
+  let exited = false
+  let exitCode = null
   child.on('exit', (code) => { exited = true; exitCode = code })
-
   const started = Date.now()
-  let m = null
-  while (Date.now() - started < timeoutMs) {
-    m = marker.exec(output)
-    if (m) break
-    if (exited) break
-    await new Promise((r) => setTimeout(r, 250))
-  }
-  // 始终尝试清理进程树（Windows 用 taskkill /T /F）
-  killTree(child)
+  while (!exited && Date.now() - started < timeoutMs) await new Promise((r) => setTimeout(r, 200))
+  if (!exited) killTree(child)
   await new Promise((r) => setTimeout(r, 300))
 
-  if (!m) {
-    const hint = exited
-      ? `进程提前退出（code=${exitCode}）`
-      : `${timeoutMs}ms 内未出现插件加载日志`
-    const tail = output.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-8).join('\n')
-    if (exited && /error|Error|failed/i.test(output)) {
-      return fail('boot', 'mount', `真实挂载失败：${hint}`, tail)
-    }
-    return skip('boot', 'mount', `真实挂载未确认：${hint}（dump-config 已通过，可视为 SKIP）`, tail)
+  const lines = output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const tail = lines.slice(-6).join('\n')
+  const normifyErr = lines.filter((l) => /normify/i.test(l) && /error|failed|throw|cannot|无法|失败/i.test(l))
+  const mountErr = lines.filter((l) => /plugin/i.test(l) && /error|failed|throw/i.test(l))
+  if (normifyErr.length > 0 || mountErr.length > 0) {
+    return fail('boot', 'mount', '插件 mount 阶段报错', [...normifyErr, ...mountErr].slice(0, 4).join(' | '))
   }
-  const [, loadVer, count] = m
-  const toolCount = Number(count)
-  const evidence = output.split(/\r?\n/).filter((l) => /normify|dsh web:|listening/i.test(l)).slice(0, 3).join(' ← ')
-  if (toolCount !== expected) fail('boot', 'mount', `挂载成功但工具数 ${toolCount} ≠ 期望 ${expected}`, evidence)
-  else pass('boot', 'mount', `真实挂载成功：DSH ${loadVer} 下加载 ${toolCount} 个工具（日志实测）`, evidence)
-  if (loadVer !== readJson(join(c.repoRoot, 'package.json')).version) {
-    warn('boot', 'mount/version', `运行时日志版本 ${loadVer} ≠ package.json 版本（lib 未重建？）`, '重建 lib/ 后重跑')
+  const reachedModel = lines.some((l) => /MISSING_CREDENTIAL|no API key|provider route|API key/i.test(l))
+  const reachedNormifyLog = /\[normify\]/.test(output)
+  if (!reachedModel && !reachedNormifyLog) {
+    const why = exited ? '进程退出但没有可判定的 mount 证据（code=' + exitCode + '）' : timeoutMs + 'ms 内未完成挂载探测'
+    return skip('boot', 'mount', why, tail)
   }
+  const stage = reachedModel ? '已进入模型/凭据阶段（=插件全部 mount 成功）' : '捕获 [normify] 日志'
+  const evidence = stage + '；exit=' + (exitCode === null ? 'killed' : exitCode) + '；' + lines.slice(-2).join(' ← ')
+  pass('boot', 'mount', '真实挂载成功：headless profile 合成 + 插件 mount 无错误（engines 门禁已解除）', evidence)
 }
-
 
 function killTree(child) {
   try {

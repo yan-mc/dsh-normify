@@ -39,6 +39,9 @@ jobs:
         run: |
           node --input-type=module -e "import { execFileSync } from 'node:child_process'; const out = execFileSync(process.execPath, ['lib/cli/index.js', 'tools'], { encoding: 'utf8' }); const n = JSON.parse(out).length; if (n !== 31) throw new Error('expected 31 tools, got ' + n); console.log('CLI tools ok:', n)"
 
+      - name: Performance smoke (300 modules, generous threshold)
+        run: npm run test:perf
+
       - name: Sanity checks
         run: |
           node --check lib/dsh/index.js

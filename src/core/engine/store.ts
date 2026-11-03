@@ -136,6 +136,37 @@ export async function loadAllModules(projectDir: string): Promise<{ files: Modul
     }
     return { files, errors, warnings };
 }
+
+/** 进程内项目索引：批量写/移动/刷新时复用一次解析结果，消除 O(M×N) 重复全量加载（P1-04）。 */
+export interface ProjectIndex {
+    files: ModuleFile[];
+    errors: Diagnostic[];
+    warnings: Diagnostic[];
+}
+/** 从 loadAllModules 结果建索引（或直接传 index 复用）。 */
+export function createProjectIndex(loaded: { files: ModuleFile[]; errors?: Diagnostic[]; warnings?: Diagnostic[] }): ProjectIndex {
+    return { files: [...loaded.files], errors: loaded.errors ?? [], warnings: loaded.warnings ?? [] };
+}
+export function indexFind(index: ProjectIndex, id: string): ModuleFile | undefined {
+    return index.files.find(f => f.module.id === id);
+}
+/** 新增/替换索引中的一个模块文件（id 不变，file 可随晋升/降级变化）。 */
+export function indexUpsert(index: ProjectIndex, file: ModuleFile): void {
+    const at = index.files.findIndex(f => f.module.id === file.module.id);
+    if (at >= 0)
+        index.files[at] = file;
+    else
+        index.files.push(file);
+}
+export function indexSetFile(index: ProjectIndex, id: string, relFile: string): void {
+    const entry = indexFind(index, id);
+    if (entry !== undefined)
+        entry.file = relFile;
+}
+export function indexRemove(index: ProjectIndex, ids: Iterable<string>): void {
+    const set = new Set(ids);
+    index.files = index.files.filter(f => !set.has(f.module.id));
+}
 /** 判断某模块当前是否为容器（有子模块或是根）。 */
 export function isContainer(module: Module, all: Module[]): boolean {
     if (module.parent === null)
@@ -155,10 +186,11 @@ function stripApisForContainer(file: ModuleFile): { module: Module; dropped: str
 function apiDropWarning(id: string, rel: string, dropped: string[]): Diagnostic {
     return diag('warning', 'structure/api-dropped-on-promote', '模块晋升为容器（' + id + '）：容器不允许声明 API，已从容器上摘除 ' + dropped.join('、'), { module: id }, { file: rel, dropped_apis: dropped }, ['把这些 API 写到合适的叶子子模块的 apis 字段上']);
 }
-export async function writeModuleFile(projectDir: string, module: Module, body: string): Promise<{ file: string; promoted: string[]; warnings: Diagnostic[] }> {
+export async function writeModuleFile(projectDir: string, module: Module, body: string, index?: ProjectIndex, opts: { fsync?: boolean } = {}): Promise<{ file: string; promoted: string[]; warnings: Diagnostic[] }> {
     const promoted: string[] = [];
     const warnings: Diagnostic[] = [];
-    const loaded = await loadAllModules(projectDir);
+    // 传入索引时复用（批量/移动场景），否则单次加载；不再在每次写时全量重解析（P1-04）。
+    const loaded: ProjectIndex = index ?? await loadAllModules(projectDir);
     const all = loaded.files.map(f => f.module);
     const container = isContainer(module, all);
     const target = moduleFilePath(projectDir, module.id, container);
@@ -168,7 +200,10 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
         promoted.push(module.id);
     }
     await mkdir(dirname(target), { recursive: true });
-    await writeFileAtomic(target, serializeModule(module, body));
+    await writeFileAtomic(target, serializeModule(module, body), opts);
+    const relTarget = relative(projectDir, target).replace(/\\/g, '/');
+    if (index !== undefined)
+        indexUpsert(index, { module, body, file: relTarget });
     const parentId = deriveParent(module.id);
     if (parentId !== null) {
         const parentLeaf = moduleFilePath(projectDir, parentId, false);
@@ -177,19 +212,24 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
             await mkdir(dirname(parentContainer), { recursive: true });
             const parentFile = loaded.files.find(f => f.module.id === parentId);
             const stripped = parentFile !== undefined ? stripApisForContainer(parentFile) : null;
+            const relParentContainer = relative(projectDir, parentContainer).replace(/\\/g, '/');
             if (parentFile === undefined || stripped === null || stripped.dropped.length === 0) {
                 // 无 API 需要摘除：保持原有的"改名即晋升"（字节不变）
                 await rename(parentLeaf, parentContainer);
+                if (index !== undefined)
+                    indexSetFile(index, parentId, relParentContainer);
             }
             else {
-                await writeFileAtomic(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''));
+                await writeFileAtomic(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''), opts);
                 await rm(parentLeaf, { force: true });
-                warnings.push(apiDropWarning(parentId, relative(projectDir, parentContainer).replace(/\\/g, '/'), stripped.dropped));
+                warnings.push(apiDropWarning(parentId, relParentContainer, stripped.dropped));
+                if (index !== undefined)
+                    indexUpsert(index, { module: stripped.module, body: parentFile.body ?? '', file: relParentContainer });
             }
             promoted.push(parentId);
         }
     }
-    return { file: relative(projectDir, target).replace(/\\/g, '/'), promoted, warnings };
+    return { file: relTarget, promoted, warnings };
 }
 /** 删除模块及其子树（含空目录清理与父模块降级）。 */
 export async function deleteModuleTree(projectDir: string, id: string): Promise<{ deleted: string[]; demoted: string | null; warnings: Diagnostic[] }> {

@@ -5,7 +5,7 @@ import { DEP_KINDS } from './types.js';
 import { diag } from './diag.js';
 import { writeFileAtomic } from './atomic.js';
 import { deriveParent, isValidId, moduleFilePath, splitId } from './ids.js';
-import { loadAllModules, writeModuleFile, fingerprintOf, gitHead } from './store.js';
+import { createProjectIndex, loadAllModules, writeModuleFile, fingerprintOf, gitHead } from './store.js';
 import { evaluatePolicy, loadPolicyFile } from './policy.js';
 import { l1Validate } from './frontmatter.js';
 import { deleteLayoutFile, layoutRelPath, loadLayoutFile, writeLayoutFile } from './layout.js';
@@ -183,6 +183,7 @@ export interface PatchResult extends EditResult {
 }
 export async function patchModule(projectDir: string, id: string, patch: Record<string, unknown>, opts: EditOptions & { body?: string } = {}): Promise<PatchResult> {
     const { files, byId, errors, warnings } = await loadProject(projectDir);
+    const index = createProjectIndex({ files, errors, warnings });
     const errorsOut = [...errors];
     if (!byId.has(id)) {
         return { ok: false, dryRun: opts.dryRun === true, errors: [diag('error', 'module/not-found', '模块不存在：' + id, { module: id }, {}, [])], warnings, changed: [], detail: {} };
@@ -208,7 +209,7 @@ export async function patchModule(projectDir: string, id: string, patch: Record<
     if (opts.dryRun === true) {
         return { ok: errorsOut.length === 0, dryRun: true, errors: errorsOut, warnings, changed: [], detail: { file: rel, module: merged.module } };
     }
-    const writeRes = await writeModuleFile(projectDir, merged.module, bodyOverride ?? byId.get(id)!.body ?? '');
+    const writeRes = await writeModuleFile(projectDir, merged.module, bodyOverride ?? byId.get(id)!.body ?? '', index);
     warnings.push(...writeRes.warnings);
     return { ok: errorsOut.length === 0, dryRun: false, errors: errorsOut, warnings, changed: [rel], detail: { file: rel }, module: merged.module, file: rel };
 }
@@ -237,6 +238,7 @@ export async function batchWrite(projectDir: string, items: BatchItem[], mode: '
         };
     }
     const { files, byId, errors: loadErrors, warnings } = await loadProject(projectDir);
+    const index = createProjectIndex({ files, errors: loadErrors, warnings });
     const errorsOut = [...loadErrors];
     const working = new Map<string, Module>();
     for (const f of files)
@@ -327,7 +329,8 @@ export async function batchWrite(projectDir: string, items: BatchItem[], mode: '
         // 父模块优先写入，保证晋升顺序稳定
         targets.sort((a, b) => a.module.id.length - b.module.id.length);
         for (const t of targets) {
-            const writeRes = await writeModuleFile(projectDir, t.module, bodies.get(t.module.id) ?? '');
+            // 批量写由快照回滚兜底，跳过逐文件 fsync 换取吞吐（P1-04）
+            const writeRes = await writeModuleFile(projectDir, t.module, bodies.get(t.module.id) ?? '', index, { fsync: false });
             warnings.push(...writeRes.warnings);
         }
     }

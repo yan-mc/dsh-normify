@@ -36,8 +36,10 @@ export function safeOutName(out: string | undefined, fallback = 'normify.html'):
 /**
  * 原子写：同目录临时文件 → fsync → rename 覆盖。进程崩溃时要么是旧文件、要么是新文件，不会出现半截内容。
  * 目录 fsync 在 Windows 上不可用，静默跳过。
+ * `opts.fsync=false` 用于已由上层事务/快照兜底的批量写：跳过逐文件 fsync 换取吞吐（P1-04）。
  */
-export async function writeFileAtomic(filePath: string, data: string | Buffer): Promise<void> {
+export async function writeFileAtomic(filePath: string, data: string | Buffer, opts: { fsync?: boolean } = {}): Promise<void> {
+    const durable = opts.fsync !== false;
     const dir = dirname(filePath);
     await mkdir(dir, { recursive: true });
     const tmp = join(dir, '.' + basename(filePath) + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2) + '-' + Date.now().toString(36));
@@ -45,7 +47,8 @@ export async function writeFileAtomic(filePath: string, data: string | Buffer): 
         const fh = await open(tmp, 'w');
         try {
             await fh.writeFile(data);
-            await fh.sync();
+            if (durable)
+                await fh.sync();
         }
         finally {
             await fh.close();
@@ -56,6 +59,8 @@ export async function writeFileAtomic(filePath: string, data: string | Buffer): 
         await rm(tmp, { force: true }).catch(() => { /* 清理失败不掩盖原错误 */ });
         throw error;
     }
+    if (!durable)
+        return;
     // 目录 fsync：保证 rename 持久化（POSIX）。Windows 打开目录会失败，忽略。
     try {
         const fh = await open(dir, 'r');
