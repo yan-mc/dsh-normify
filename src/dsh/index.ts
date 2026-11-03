@@ -25,8 +25,17 @@ export const Config = z.object({
     devCompanionReminderAfter: z.number().default(8),
     approveDestructive: z.boolean().default(true),
 });
+function readPluginVersion(): string {
+    try {
+        const raw = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json'), 'utf8');
+        return String((JSON.parse(raw) as { version?: unknown }).version ?? '0');
+    }
+    catch {
+        return '0';
+    }
+}
 export function apply(ctx: Context, config: Config): void {
-    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual });
+    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual, version: readPluginVersion() });
     installCompanionReminder(ctx, config);
     installDestructiveApproval(ctx, config);
     const skillRegistered = registerSkill(ctx);

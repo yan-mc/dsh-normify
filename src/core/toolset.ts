@@ -12,7 +12,7 @@ import { POLICY_SCHEMA_VERSION, defaultPolicyTemplate, evaluatePolicy, l1Validat
 import { CHANGE_SCHEMA_VERSION, isValidChangeId, listChangeIds, loadChangeFile, writeChangeFile, l1ValidateChange } from './engine/changes.js';
 import { closeChange } from './engine/companion.js';
 import { validateProject } from './engine/validate.js';
-import { buildProject } from './engine/compile.js';
+import { buildProject, verifyArtifacts } from './engine/compile.js';
 import { renderProject } from './engine/render.js';
 import { fmtDiag } from './engine/diag.js';
 import { HELP_TOPICS, toolReference, topicReference } from './engine/reference.js';
@@ -23,6 +23,8 @@ import type { ChangeData, ChangeModules, ChangeStatus, Diagnostic, LayoutData, L
 export interface ToolEnv {
     rootDir: string;
     requireBilingual: boolean;
+    /** 插件/CLI 版本（写入 structure-manifest.json；缺省 '0'）。 */
+    version?: string;
 }
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
@@ -96,6 +98,9 @@ interface ModuleUpsertArgs extends ProjectArgs {
 
 interface RepoRootArgs extends ProjectArgs {
     repoRoot?: string;
+}
+interface BuildArgs extends RepoRootArgs {
+    verify_only?: boolean;
 }
 
 interface HelpArgs {
@@ -864,19 +869,39 @@ export function createNormifyTools(env: ToolEnv): NormifyToolSpec[] {
         return diagnosticsOut(v.errors, v.warnings);
     });
     register('normify_build', {
-        description: '校验并编译：产出 tree.json / outline.md / api-index.json / receipt.json（含 SHA-256 冻结）。任何 error 不产产物。',
+        description: '校验并编译：产出 tree.json / outline.md / api-index.json / structure-manifest.json（结构 SBOM）/ receipt.json + receipt.sha256（SHA-256 冻结链）。任何 error 不产产物。verify_only=true 时只校验已有产物回执、不重编译。',
         behavior: 'idempotent',
         parameters: params({
             repoRoot: strOpt('仓库根目录（启用证据校验）'),
+            verify_only: boolOpt('只校验已有产物回执（不重新编译）'),
             ...projectParams(true),
         }, []),
-    }, async (args: RepoRootArgs) => {
+    }, async (args: BuildArgs) => {
         const proj = await resolve(args);
-        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual });
+        if (args.verify_only === true) {
+            const v = await verifyArtifacts(proj.dir);
+            return {
+                ok: v.ok,
+                receipt_sha256: v.actualReceiptSha256,
+                artifacts: v.artifacts.map(row => ({ file: row.file, ok: row.ok, recorded: row.recorded, actual: row.actual, bytes: row.bytes })),
+                errors: v.errors.map(fmtDiag),
+                warnings: v.warnings.map(fmtDiag),
+                hint: v.ok ? '回执与全部产物哈希一致（L3 冻结可自证）。' : '回执校验失败：先按 supportedFixes 修复，再重新 normify_build。',
+            };
+        }
+        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual, generatorVersion: env.version });
         if (!b.ok) {
             return { ok: false, errors: b.errors.map(fmtDiag), warnings: b.warnings.map(fmtDiag), summary: b.errors.length + ' error（未产出任何产物）' };
         }
-        return { ok: true, receipt: b.receipt, receipt_sha256: b.receiptSha256, artifacts: { receipt: 'receipt.json', receipt_hash: 'receipt.sha256' }, warnings: b.warnings.map(fmtDiag), hint: '编译成功。产物含 tree.json/outline.md/api-index.json/receipt.json；receipt 自身哈希在 receipt.sha256。可运行 normify_render 生成交互式 HTML。' };
+        return {
+            ok: true,
+            receipt: b.receipt,
+            receipt_sha256: b.receiptSha256,
+            structure_manifest_sha256: b.manifestSha256,
+            artifacts: { manifest: 'structure-manifest.json', receipt: 'receipt.json', receipt_hash: 'receipt.sha256' },
+            warnings: b.warnings.map(fmtDiag),
+            hint: '编译成功。产物：tree.json / outline.md / api-index.json / structure-manifest.json / receipt.json；receipt 自身哈希在 receipt.sha256。可运行 normify_render 生成交互式 HTML。',
+        };
     });
     register('normify_sync', {
         description: '增量再生成计划器 v2（只读）：git diff → 脏子树 / 新增文件建议 / 失效模块 / API 增删与破坏性变更 / planned 进度，供 AI 按清单局部重建。',

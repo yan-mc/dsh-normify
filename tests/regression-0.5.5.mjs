@@ -87,6 +87,21 @@ const sidecar = existsSync(join(BUILD, 'receipt.sha256')) ? readFileSync(join(BU
 ok('③d receipt.sha256 sidecar 与文件字节一致', sidecar === hex(receiptText), sidecar.slice(0, 12) + ' vs ' + hex(receiptText).slice(0, 12))
 const treeText = readFileSync(join(BUILD, 'tree.json'), 'utf8')
 ok('③e tree.json 哈希可复算', receipt.artifacts?.['tree.json']?.sha256 === hex(treeText))
+// P2-03 结构 SBOM + 回执自证（verify）
+ok('③g structure-manifest.json 存在且回执登记 4 件产物', existsSync(join(BUILD, 'structure-manifest.json')) && Object.keys(receipt.artifacts ?? {}).length === 4 && receipt.artifacts?.['structure-manifest.json'] !== undefined, JSON.stringify(Object.keys(receipt.artifacts ?? {})))
+const manifest = existsSync(join(BUILD, 'structure-manifest.json')) ? JSON.parse(readFileSync(join(BUILD, 'structure-manifest.json'), 'utf8')) : {}
+ok('③h manifest 哈希与回执一致', manifest.hashes?.['tree.json'] === receipt.artifacts?.['tree.json']?.sha256 && manifest.hashes?.['api-index.json'] === receipt.artifacts?.['api-index.json']?.sha256, JSON.stringify(manifest.hashes ?? {}).slice(0, 120))
+ok('③i manifest 含模块清单与 totals', Array.isArray(manifest.modules) && manifest.modules.length >= 1 && manifest.stats?.module_count === manifest.modules.length, JSON.stringify({ modules: manifest.modules?.length, stats: manifest.stats?.module_count }))
+const verifyOk = await call('normify_build', { dir: BUILD, verify_only: true })
+ok('③j verify_only 通过', verifyOk.ok === true && Array.isArray(verifyOk.artifacts) && verifyOk.artifacts.every(a => a.ok === true), JSON.stringify(verifyOk.errors ?? verifyOk.error ?? '').slice(0, 120))
+const outlinePath = join(BUILD, 'outline.md')
+const outlineBefore = readFileSync(outlinePath, 'utf8')
+writeFileSync(outlinePath, 'tampered outline\n', 'utf8')
+const verifyBad = await call('normify_build', { dir: BUILD, verify_only: true })
+ok('③k 篡改产物被 verify 检出', verifyBad.ok === false && JSON.stringify(verifyBad.errors ?? verifyBad).includes('verify/hash-mismatch'), JSON.stringify(verifyBad.errors ?? verifyBad).slice(0, 140))
+writeFileSync(outlinePath, outlineBefore, 'utf8')
+ok('③l 恢复后 verify 通过', (await call('normify_build', { dir: BUILD, verify_only: true })).ok === true)
+
 const tmpLeft = walkFiles(join(BUILD, 'modules')).filter(p => p.includes('.tmp-'))
 ok('③f 原子写不残留 .tmp- 文件', tmpLeft.length === 0, tmpLeft.slice(0, 3).join(', '))
 

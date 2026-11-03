@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { apiKey, depthOf, treeOf } from './ids.js';
 import { sha256Text } from './store.js';
 import { writeFileAtomic } from './atomic.js';
@@ -6,12 +7,16 @@ import type { Api, Dep, Diagnostic, LayoutData, LocalizedText, ModuleState, Sour
 import { validateProject, type ValidateOptions, type ValidateOutput } from './validate.js';
 import { diag } from './diag.js';
 export interface BuildOptions extends ValidateOptions {
+    /** 生成器版本（写入 structure-manifest.json 的 generator.version；默认 '0' 便于测试）。 */
+    generatorVersion?: string;
 }
 export interface BuildOutput {
     ok: boolean;
     receipt: Record<string, unknown> | null;
     /** receipt.json 自身的 SHA-256（写入 receipt.sha256 sidecar；receipt 内部不含自身哈希，见 P0-03）。 */
     receiptSha256: string | null;
+    /** structure-manifest.json（结构 SBOM）的 SHA-256。 */
+    manifestSha256: string | null;
     errors: Diagnostic[];
     warnings: Diagnostic[];
     validate: ValidateOutput | null;
@@ -114,7 +119,7 @@ function outlineText(slug: string, v: ValidateOutput): string {
 export async function buildProject(projectDir: string, opts: BuildOptions): Promise<BuildOutput> {
     const v = await validateProject(projectDir, opts);
     if (!v.ok) {
-        return { ok: false, receipt: null, receiptSha256: null, errors: v.errors, warnings: v.warnings, validate: v };
+        return { ok: false, receipt: null, receiptSha256: null, manifestSha256: null, errors: v.errors, warnings: v.warnings, validate: v };
     }
     const slug = projectDir.split(/[\\\/]/).pop() ?? 'project';
     const files = [...v.files].sort((a, b) => a.module.id.localeCompare(b.module.id));
@@ -261,6 +266,53 @@ export async function buildProject(projectDir: string, opts: BuildOptions): Prom
         await writeFileAtomic(join(projectDir, 'tree.json'), treeText);
         await writeFileAtomic(join(projectDir, 'outline.md'), outline);
         await writeFileAtomic(join(projectDir, 'api-index.json'), apiIndexText);
+        // structure-manifest.json（结构 SBOM）：模块/API/依赖的确定性清单 + 其它产物的哈希，供 CI/审计消费。
+        const manifestModules = files.map(f => {
+            const m = f.module;
+            const apis = (m.apis ?? []).map(a => apiKey(a)).sort();
+            const deps = (m.deps ?? []).map(d => ({ kind: d.kind, to: d.to, from_api: d.from_api ?? null, to_api: d.to_api ?? null })).sort((a, b) => (a.to + '\0' + a.kind).localeCompare(b.to + '\0' + b.kind));
+            return {
+                id: m.id,
+                uid: m.uid,
+                parent: m.parent,
+                state: m.state ?? 'active',
+                fingerprint: m.fingerprint,
+                source: m.source.map(s => ({ path: s.path, ...(s.line !== undefined ? { line: s.line } : {}), ...(s.end_line !== undefined ? { end_line: s.end_line } : {}) })),
+                apis,
+                deps,
+            };
+        }).sort((a, b) => a.id.localeCompare(b.id));
+        const sourcePaths = new Set<string>();
+        for (const f of files)
+            for (const s of f.module.source)
+                sourcePaths.add(s.path);
+        const treeStats = treeJson.project.stats;
+        const structureManifest = {
+            schema_version: 1,
+            kind: 'normify-structure-manifest',
+            generator: { name: 'normify', version: opts.generatorVersion ?? '0' },
+            project: slug,
+            compiled_at: compiledAt,
+            trees: roots.map(r => ({
+                tree_id: r.module.id,
+                root_uid: r.module.uid,
+                revision: r.module.revision,
+                ...(r.module.repository !== undefined ? { repository: r.module.repository } : {}),
+            })),
+            stats: {
+                ...treeStats,
+                source_file_count: sourcePaths.size,
+            },
+            modules: manifestModules,
+            hashes: {
+                'tree.json': sha256Text(treeText),
+                'outline.md': sha256Text(outline),
+                'api-index.json': sha256Text(apiIndexText),
+            },
+        };
+        const manifestText = JSON.stringify(structureManifest, null, 2) + '\n';
+        await writeFileAtomic(join(projectDir, 'structure-manifest.json'), manifestText);
+        const manifestSha256 = sha256Text(manifestText);
         const warningSummary: Record<string, number> = {};
         for (const w of v.warnings)
             warningSummary[w.code] = (warningSummary[w.code] ?? 0) + 1;
@@ -270,6 +322,7 @@ export async function buildProject(projectDir: string, opts: BuildOptions): Prom
             'tree.json': { sha256: sha256Text(treeText), bytes: Buffer.byteLength(treeText, 'utf8') },
             'outline.md': { sha256: sha256Text(outline), bytes: Buffer.byteLength(outline, 'utf8') },
             'api-index.json': { sha256: sha256Text(apiIndexText), bytes: Buffer.byteLength(apiIndexText, 'utf8') },
+            'structure-manifest.json': { sha256: manifestSha256, bytes: Buffer.byteLength(manifestText, 'utf8') },
         };
         const receipt = {
             schema_version: 1,
@@ -286,16 +339,90 @@ export async function buildProject(projectDir: string, opts: BuildOptions): Prom
         await writeFileAtomic(join(projectDir, 'receipt.json'), receiptText);
         const receiptSha256 = sha256Text(receiptText);
         await writeFileAtomic(join(projectDir, 'receipt.sha256'), receiptSha256 + '\n');
-        return { ok: true, receipt, receiptSha256, errors: [], warnings: v.warnings, validate: v };
+        return { ok: true, receipt, receiptSha256, manifestSha256, errors: [], warnings: v.warnings, validate: v };
     }
     catch (error) {
         return {
             ok: false,
             receipt: null,
             receiptSha256: null,
+            manifestSha256: null,
             errors: [diag('error', 'build/write-failed', '编译产物写入失败：' + String(error), {}, {}, [])],
             warnings: v.warnings,
             validate: v,
         };
     }
+}
+
+export interface VerifyArtifactRow {
+    file: string;
+    recorded: string;
+    actual: string | null;
+    ok: boolean;
+    bytes: number | null;
+}
+/** 校验回执与产物：receipt.sha256 → receipt → 各产物哈希（L3 冻结的可自证闭环）。 */
+export async function verifyArtifacts(projectDir: string): Promise<{
+    ok: boolean;
+    receiptSha256: string | null;
+    actualReceiptSha256: string | null;
+    artifacts: VerifyArtifactRow[];
+    errors: Diagnostic[];
+    warnings: Diagnostic[];
+}> {
+    const errors: Diagnostic[] = [];
+    const warnings: Diagnostic[] = [];
+    const receiptPath = join(projectDir, 'receipt.json');
+    let receiptText: string;
+    try {
+        receiptText = await readFile(receiptPath, 'utf8');
+    }
+    catch {
+        return { ok: false, receiptSha256: null, actualReceiptSha256: null, artifacts: [], errors: [diag('error', 'verify/no-receipt', '缺少 receipt.json（先运行 normify_build）', {}, {}, ['运行 normify_build'])], warnings };
+    }
+    const actualReceiptSha256 = sha256Text(receiptText);
+    let recordedReceiptSha: string | null = null;
+    try {
+        recordedReceiptSha = (await readFile(join(projectDir, 'receipt.sha256'), 'utf8')).trim();
+    }
+    catch {
+        errors.push(diag('error', 'verify/sidecar-missing', '缺少 receipt.sha256（无法自证回执）', {}, {}, ['重新运行 normify_build']));
+    }
+    if (recordedReceiptSha !== null && recordedReceiptSha !== actualReceiptSha256) {
+        errors.push(diag('error', 'verify/sidecar-mismatch', 'receipt.sha256 与 receipt.json 实际字节不一致（回执被改动或产物不完整）', {}, { recorded: recordedReceiptSha, actual: actualReceiptSha256 }, ['重新运行 normify_build']));
+    }
+    let receipt: Record<string, unknown>;
+    try {
+        receipt = JSON.parse(receiptText) as Record<string, unknown>;
+    }
+    catch {
+        return { ok: false, receiptSha256: recordedReceiptSha, actualReceiptSha256, artifacts: [], errors: [...errors, diag('error', 'verify/receipt-parse', 'receipt.json 不是合法 JSON', {}, {}, ['重新运行 normify_build'])], warnings };
+    }
+    const artifacts = (receipt.artifacts ?? {}) as Record<string, { sha256?: unknown; bytes?: unknown }>;
+    const rows: VerifyArtifactRow[] = [];
+    for (const [file, record] of Object.entries(artifacts).sort(([a], [b]) => a.localeCompare(b))) {
+        const recorded = typeof record?.sha256 === 'string' ? record.sha256 : '';
+        const recordedBytes = typeof record?.bytes === 'number' ? record.bytes : null;
+        let actual: string | null = null;
+        let bytes: number | null = null;
+        try {
+            const text = await readFile(join(projectDir, file), 'utf8');
+            actual = sha256Text(text);
+            bytes = Buffer.byteLength(text, 'utf8');
+        }
+        catch {
+            errors.push(diag('error', 'verify/artifact-missing', '回执中登记的产物不存在：' + file, { file }, { recorded }, ['重新运行 normify_build']));
+        }
+        const okRow = actual !== null && actual === recorded && (recordedBytes === null || recordedBytes === bytes);
+        if (actual !== null && !okRow) {
+            errors.push(diag('error', 'verify/hash-mismatch', '产物哈希与回执不一致：' + file, { file }, { recorded, actual, recorded_bytes: recordedBytes, actual_bytes: bytes }, ['产物被改动；确认变更后重新运行 normify_build']));
+        }
+        rows.push({ file, recorded, actual, ok: okRow, bytes });
+    }
+    if (rows.length === 0) {
+        errors.push(diag('error', 'verify/empty-receipt', 'receipt.json 未登记任何产物', {}, {}, ['重新运行 normify_build']));
+    }
+    for (const warn of (Array.isArray(receipt.warnings) ? [] : Object.keys((receipt.warnings ?? {}) as Record<string, unknown>)))
+        warnings.push(diag('warning', 'verify/prior-warning', '编译时存在 warning：' + warn, {}, {}, []));
+    return { ok: errors.length === 0, receiptSha256: recordedReceiptSha, actualReceiptSha256, artifacts: rows, errors, warnings };
 }

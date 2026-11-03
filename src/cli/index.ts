@@ -17,10 +17,21 @@
  *
  * 退出码：0 成功；2 校验/L2 错误；3 漂移；4 参数错误；6 安全拒绝；5 其它失败。
  */
+import { readFileSync } from 'node:fs';
+import { resolveProject, verifyArtifacts } from '../core/index.js';
 import { createNormifyTools } from '../core/toolset.js';
 import type { NormifyToolSpec, ToolEnv } from '../core/toolset.js';
 
-const VERSION = '0.5.5';
+function readVersion(): string {
+    try {
+        const raw = readFileSync(new URL('../../package.json', import.meta.url), 'utf8');
+        return String((JSON.parse(raw) as { version?: unknown }).version ?? '0');
+    }
+    catch {
+        return '0';
+    }
+}
+const VERSION = readVersion();
 
 interface ParsedArgs {
     command: string;
@@ -37,7 +48,8 @@ const COMMANDS: Record<string, { tool: string; help: string }> = {
     brief: { tool: 'normify_brief', help: '开发指引（--task/--id/--files）' },
     validate: { tool: 'normify_validate', help: 'L2 全项目校验（--repo-root 启用证据校验）' },
     check: { tool: 'normify_check', help: '设计预检（--args-json 传拟建模块）' },
-    build: { tool: 'normify_build', help: '编译产物（tree/outline/api-index/receipt）' },
+    build: { tool: 'normify_build', help: '编译产物（tree/outline/api-index/structure-manifest/receipt）' },
+    verify: { tool: '', help: '校验回执与全部产物哈希（receipt.sha256 → receipt → artifacts）' },
     render: { tool: 'normify_render', help: '渲染单文件 HTML（--out 纯文件名）' },
     sync: { tool: 'normify_sync', help: '增量同步规划（--repo-root、--diff）' },
     'change-open': { tool: 'normify_change_open', help: '开启变更（--args-json 传 modules/acceptance 等）' },
@@ -181,7 +193,28 @@ async function main(): Promise<void> {
     const env: ToolEnv = {
         rootDir: typeof parsed.flags.root === 'string' ? parsed.flags.root : process.cwd(),
         requireBilingual: parsed.flags['allow-loose-bilingual'] !== true,
+        version: VERSION,
     };
+    if (parsed.command === 'verify') {
+        try {
+            const args = buildToolArgs(parsed);
+            const proj = await resolveProject(env.rootDir, { project: typeof args.project === 'string' ? args.project : undefined, dir: typeof args.dir === 'string' ? args.dir : undefined });
+            const v = await verifyArtifacts(proj.dir);
+            process.stdout.write(JSON.stringify({
+                ok: v.ok,
+                project: proj.slug,
+                receipt_sha256: v.actualReceiptSha256,
+                artifacts: v.artifacts.map(row => ({ file: row.file, ok: row.ok, recorded: row.recorded, actual: row.actual, bytes: row.bytes })),
+                errors: v.errors, warnings: v.warnings,
+            }, null, 2) + '\n');
+            process.exit(v.ok ? 0 : 2);
+        }
+        catch (error) {
+            const e = error as Error & { code?: string };
+            process.stderr.write(JSON.stringify({ ok: false, error: { code: e.code ?? 'internal', message: e.message } }, null, 2) + '\n');
+            process.exit(4);
+        }
+    }
     const specs = createNormifyTools(env);
     if (parsed.command === 'tools') {
         process.stdout.write(JSON.stringify(specs.map(spec => ({ name: spec.name, description: spec.description, behavior: spec.behavior })), null, 2) + '\n');
