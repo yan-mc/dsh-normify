@@ -1,0 +1,79 @@
+name: DSH contract watch
+
+# 每周检测 DSH（@deepseek-ai/dsh-tools）契约漂移：比较 Normify 已对齐版本 vs npm dist-tags。
+# 有差异 → 自动开 issue（同标题复用，不重复刷屏）并让 workflow 失败。
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # 每周一 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: contract drift vs next/alpha
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Install pinned DSH test deps (pinned 版本的来源)
+        run: node tests/platform-contract.mjs
+        continue-on-error: true
+      - name: Detect contract drift
+        id: drift
+        run: |
+          set +e
+          node scripts/dsh-contract-diff.mjs --report drift-report.md
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "1" ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::检测到 DSH 契约漂移，详见 drift-report.md"
+          elif [ "$code" = "2" ]; then
+            echo "::notice::无法检测（网络/工具不可用），本轮跳过"
+            exit 0
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-drift-report
+          path: drift-report.md
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Open/refresh tracking issue
+        if: steps.drift.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="DSH 契约漂移：@deepseek-ai/dsh-tools 符号面变化"
+          {
+            echo "自动检测（$(date -u +%Y-%m-%dT%H:%MZ)）发现 DSH 工具契约与 Normify 已对齐版本存在差异。"
+            echo ""
+            echo "运行记录：$RUN_URL"
+            echo ""
+            cat drift-report.md
+          } > issue-body.md
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "$TITLE" --body-file issue-body.md
+          fi
+      - name: Fail on drift
+        if: steps.drift.outputs.drift == 'true'
+        run: exit 1

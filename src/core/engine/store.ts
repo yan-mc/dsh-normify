@@ -213,7 +213,18 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
             const parentFile = loaded.files.find(f => f.module.id === parentId);
             const stripped = parentFile !== undefined ? stripApisForContainer(parentFile) : null;
             const relParentContainer = relative(projectDir, parentContainer).replace(/\\/g, '/');
-            if (parentFile === undefined || stripped === null || stripped.dropped.length === 0) {
+            if (parentLeaf === parentContainer) {
+                // 单段根模块：leaf 与 container 是同一路径（modules/<tree>/index.md）。
+                // 不能 rename/rm 自己（否则会把刚写入的根文件删掉，P1 缺陷）：
+                // 有 API 需要摘除时原地重写，否则保持字节不变。
+                if (parentFile !== undefined && stripped !== null && stripped.dropped.length > 0) {
+                    await writeFileAtomic(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''), opts);
+                    warnings.push(apiDropWarning(parentId, relParentContainer, stripped.dropped));
+                    if (index !== undefined)
+                        indexUpsert(index, { module: stripped.module, body: parentFile.body ?? '', file: relParentContainer });
+                }
+            }
+            else if (parentFile === undefined || stripped === null || stripped.dropped.length === 0) {
                 // 无 API 需要摘除：保持原有的"改名即晋升"（字节不变）
                 await rename(parentLeaf, parentContainer);
                 if (index !== undefined)

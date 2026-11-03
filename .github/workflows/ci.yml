@@ -2,48 +2,135 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'refactor/**', 'release/**']
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 钉住的 DSH 版本（契约测试与静态冒烟用）；另有 next 动态档（允许失败）
+  DSH_PINNED: 0.2.1-rc.5
+  NODE_NO_WARNINGS: '1'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  # ---------------------------------------------------------------------------
+  # 快任务（OS × Node 矩阵）：构建 / 类型 / 单测 / 静态发布冒烟 / 打包清单
+  # ---------------------------------------------------------------------------
+  fast:
+    name: fast / ${{ matrix.os }} / node${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - name: Install dependencies
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install
         run: npm install --no-audit --no-fund
       - name: Build (tsc)
         run: npm run build
       - name: Typecheck
         run: npm run typecheck
-      - name: Tests (engine + companion e2e)
+      - name: Core boundary guard (core 不 import @deepseek-ai/*)
+        run: node scripts/check-core-boundary.mjs
+      - name: CLI smoke (31 tools)
+        run: |
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; const out = execFileSync(process.execPath, ['lib/cli/index.js', 'tools'], { encoding: 'utf8' }); const n = JSON.parse(out).length; if (n !== 31) throw new Error('expected 31 tools, got ' + n); console.log('CLI tools ok:', n)"
+      - name: L1 core unit tests
+        run: npm run test:unit
+      - name: Static release smoke (engines / bundle / files / pack 清单)
+        run: node scripts/pack-smoke.mjs --static --dsh-version ${{ env.DSH_PINNED }}
+      - name: npm pack manifest check
+        run: npm pack --dry-run
+      - name: publint (optional)
+        continue-on-error: true
+        run: npx --yes publint@0.3.12
+
+  # ---------------------------------------------------------------------------
+  # 慢任务：E2E / 回归 / 性能 / 真实 DSH 契约
+  # ---------------------------------------------------------------------------
+  integration:
+    name: integration / node24
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: fast
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Install pnpm (pack-smoke --contract 的安装器)
+        run: npm install -g pnpm@10
+      - name: Build
+        run: npm run build
+      - name: E2E + regression suites
         run: npm test
-      - name: Bundle + tool-name contract
-        run: node ci-contract-check.cjs
+      - name: Perf smoke
+        run: npm run test:perf
+      - name: Platform contract (pinned DSH)
+        env:
+          NORMIFY_DSH_TOOLS_VERSION: ${{ env.DSH_PINNED }}
+        run: npm run test:contract
+      - name: Contract drift vs npm dist-tags (advisory)
+        run: node scripts/dsh-contract-diff.mjs --pinned ${{ env.DSH_PINNED }} || echo "::warning::检测到 DSH 契约漂移（不阻断本轮 CI；dsh-watch workflow 会开 issue）"
+
+  contract-next:
+    name: contract / DSH next (dynamic, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fast
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Platform contract against @deepseek-ai/dsh-tools@next
+        env:
+          NORMIFY_DSH_TOOLS_VERSION: next
+        run: node tests/platform-contract.mjs
+
+  # ---------------------------------------------------------------------------
+  # 守卫：跨平台路径写法 + 产物 sanity（移植 0.5.x 的教训）
+  # ---------------------------------------------------------------------------
+  guards:
+    name: guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Portability guard (no Windows-only path juggling)
         # 教训：tests 里曾用 pathname.replace(/^\//,'') 拼 file URL —— Windows 正常（/F:/…），
         # Linux 上 pathname 以 / 开头、去掉后变成相对路径，被解析成 <cwd>/home/runner/… 而 ERR_MODULE_NOT_FOUND。
         run: |
-          if grep -rIn "pathname\.replace" tests/ scripts/ ; then
+          if grep -rIn "pathname\.replace" tests/ scripts/; then
             echo "::error::use new URL(rel, import.meta.url).href instead of pathname.replace (POSIX-unsafe)"; exit 1
           fi
           echo "portability guard ok"
-
-      - name: Core/CLI boundary
-        run: node scripts/check-core-boundary.mjs
-
-      - name: CLI smoke (31 tools)
-        run: |
-          node --input-type=module -e "import { execFileSync } from 'node:child_process'; const out = execFileSync(process.execPath, ['lib/cli/index.js', 'tools'], { encoding: 'utf8' }); const n = JSON.parse(out).length; if (n !== 31) throw new Error('expected 31 tools, got ' + n); console.log('CLI tools ok:', n)"
-
-      - name: Performance smoke (300 modules, generous threshold)
-        run: npm run test:perf
-
+      - name: Bundle + tool-name contract
+        run: node ci-contract-check.cjs
       - name: Sanity checks
         run: |
           node --check lib/dsh/index.js
           node --check lib/dsh/tools.js
-          node -e "const fs=require('fs');const s=fs.readFileSync('skills/normify-gen/SKILL.md','utf8');if(!s.startsWith('---')||!/name:\s*normify-gen/.test(s))throw new Error('SKILL.md frontmatter invalid');const v=fs.readFileSync('vendor/schemastery/lib/index.mjs','utf8');if(!v.includes('../../cosmokit/lib/index.js'))throw new Error('vendor patch missing');console.log('sanity ok')"
+          node -e "const fs=require('fs');const s=fs.readFileSync('skills/normify-gen/SKILL.md','utf8');if(!s.startsWith('---')||!/name:\s*normify-gen/.test(s))throw new Error('SKILL.md frontmatter invalid');const v=fs.readFileSync('vendor/schemastery/lib/index.mjs','utf8');if(!v.includes('../../cosmokit/lib/index.js'))throw new Error('vendor patch missing');const p=JSON.parse(fs.readFileSync('package.json','utf8'));if(!fs.existsSync(p.dsh.bundle.patch))throw new Error('dsh.bundle.patch missing');console.log('sanity ok')"
