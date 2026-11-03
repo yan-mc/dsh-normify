@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Normify">
+  <rect width="64" height="64" rx="14" fill="#0b1220"/>
+  <g fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round">
+    <path d="M32 16v10M18 38h28M18 38V28M46 38V28M32 26v12"/>
+  </g>
+  <g fill="#38bdf8">
+    <rect x="26" y="10" width="12" height="8" rx="2.5"/>
+    <rect x="12" y="26" width="12" height="8" rx="2.5"/>
+    <rect x="40" y="26" width="12" height="8" rx="2.5"/>
+  </g>
+  <g fill="#34d399">
+    <rect x="26" y="38" width="12" height="8" rx="2.5"/>
+    <rect x="26" y="50" width="12" height="6" rx="2"/>
+  </g>
+</svg>

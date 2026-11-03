@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { registerTools } from './tools.js';
+import { registerTools, toolBehaviors } from './tools.js';
 import type { Context } from '@deepseek-ai/cordis';
 // vendored schemastery：相对路径加载（不依赖注入器环境的包名解析）
 // @ts-expect-error vendored mjs 无声明文件
@@ -15,18 +15,22 @@ export interface Config {
     /** 伴随开发提醒钩子（默认关）：连续修改 N 个文件后提醒同步结构树。 */
     devCompanionReminder: boolean;
     devCompanionReminderAfter: number;
+    /** destroy 类工具（module_delete / layout_delete）是否走一次性审批（默认开，防误删）。 */
+    approveDestructive: boolean;
 }
 export const Config = z.object({
     rootDir: z.string().default('.'),
     requireBilingual: z.boolean().default(true),
     devCompanionReminder: z.boolean().default(false),
     devCompanionReminderAfter: z.number().default(8),
+    approveDestructive: z.boolean().default(true),
 });
 export function apply(ctx: Context, config: Config): void {
     registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual });
     installCompanionReminder(ctx, config);
+    installDestructiveApproval(ctx, config);
     const skillRegistered = registerSkill(ctx);
-    const message = '[normify] dsh-normify 0.5.5 已加载：31 个 normify_* 工具' +
+    const message = '[normify] dsh-normify 已加载：31 个 normify_* 工具' +
         (skillRegistered ? ' + normify-gen 技能（rootDir=' + config.rootDir + '）' : '（技能未注册）');
     ctx.logger?.info?.(message);
 }
@@ -76,6 +80,38 @@ function installCompanionReminder(ctx: Context, config: Config): void {
         if (decision?.kind !== 'accept' || !Array.isArray(res?.content))
             return decision;
         return { ...decision, content: [...res.content, { type: 'text', text: reminder }] };
+    });
+}
+interface PreExecuteInfo {
+    name?: string;
+}
+type PreExecuteNext = () => Promise<{ kind: string }>;
+type PreExecuteListener = (exec: PreExecuteInfo | undefined, next: PreExecuteNext) => Promise<unknown>;
+interface ApprovalContext {
+    on?: (name: string, listener: PreExecuteListener) => void;
+}
+/**
+ * destroy 类工具的一次性审批（0.2.x `tools/pre-execute` 返回 ask）：
+ * 第三方工具不被 sandbox 约束，删除结构数据的动作必须由人确认（config.approveDestructive=false 可关）。
+ */
+function installDestructiveApproval(ctx: Context, config: Config): void {
+    if (!config.approveDestructive)
+        return;
+    const behaviors = toolBehaviors({ rootDir: config.rootDir, requireBilingual: config.requireBilingual });
+    const anyCtx = ctx as unknown as ApprovalContext;
+    anyCtx.on?.('tools/pre-execute', async (exec, next) => {
+        const toolName = exec?.name;
+        if (typeof toolName !== 'string' || behaviors.get(toolName) !== 'destroy')
+            return next();
+        return {
+            kind: 'ask',
+            reason: 'normify 破坏性操作：' + toolName,
+            displayReason: {
+                en: 'Normify will delete structure data (' + toolName + '). Allow this once?',
+                'zh-CN': 'Normify 将删除结构数据（' + toolName + '），是否允许本次操作？',
+                zh: 'Normify 将删除结构数据（' + toolName + '），是否允许本次操作？',
+            },
+        };
     });
 }
 interface SkillSpec {

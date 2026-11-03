@@ -1,16 +1,35 @@
 {
   "name": "@dsh-external/dsh-normify",
   "version": "0.5.5",
-  "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（31 个工具 + normify-gen 技能 + 渲染数据集 + 伴随开发）。0.5.5：适配 DeepSeek Harness 0.2.x（只支持当前最新版）、安全三破口修复、receipt 自哈希修复、数据正确性与原子写。",
+  "description": "Normify（结构编译器）：人机共读的分形模块树结构数据——模块源数据零容忍校验、确定性编译（含结构 SBOM 回执）、单文件交互架构图与伴随开发流程；31 个 normify_* 工具 + normify-gen 技能 + 跨 agent CLI。只支持当前最新 DSH（0.2.x）。",
   "type": "module",
   "main": "./lib/dsh/index.js",
   "types": "./lib/types/dsh/index.d.ts",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": {
+      "types": "./lib/types/dsh/index.d.ts",
+      "default": "./lib/dsh/index.js"
+    },
+    "./core": {
+      "types": "./lib/types/core/index.d.ts",
+      "default": "./lib/core/index.js"
+    },
+    "./cli": "./lib/cli/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
   "files": [
     "lib",
     "skills",
     "vendor",
+    "locale",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
+    "README_EN.md",
     "LICENSE"
   ],
   "license": "MIT",
@@ -20,7 +39,9 @@
     "deepseek-harness",
     "agent-skill",
     "architecture",
-    "structure-diagram",
+    "architecture-as-code",
+    "structure-sbom",
+    "structure-compiler",
     "module-tree",
     "normify"
   ],
@@ -59,9 +80,10 @@
     "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs && node tests/regression-0.5.5.mjs",
+    "test:perf": "node tests/perf-smoke.mjs",
+    "test:contract": "node scripts/pack-smoke.mjs --contract",
     "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
-    "cli": "node lib/cli/index.js",
-    "test:perf": "node tests/perf-smoke.mjs"
+    "cli": "node lib/cli/index.js"
   },
   "bin": {
     "normify": "./lib/cli/index.js"

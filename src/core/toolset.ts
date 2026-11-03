@@ -445,7 +445,7 @@ function depParam(): SchemaNode {
                 to: { type: 'string', description: '目标模块 id', required: true },
                 from_api: { type: 'string', description: '可选：本模块某 API 键（仅叶子）', required: false },
                 to_api: { type: 'string', description: '可选：目标模块自身某 API 键', required: false },
-                label: l10nParam('箭头标签'),
+                label: l10nOptParam('箭头标签（可选）'),
             },
             required: ['kind', 'to'],
         },
