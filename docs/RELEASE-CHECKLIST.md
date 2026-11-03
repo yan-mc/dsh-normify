@@ -90,7 +90,7 @@ npm pack --dry-run        # 先核对文件清单
 - [ ] `package.json`：`description` / `keywords` / `icon` / `locale` / `exports` / `files` 与当前能力一致。
 - [ ] GitHub 仓库 description/topics 更新（工具数、DSH 版本范围）。
 - [ ] dshbase / dshhub 等目录的版本/描述同步（若已收录）。
-- [ ] npm 若发布：`npm publish --dry-run` 先行；本仓库默认以 GitHub Release 交付。
+- [x] GitHub Release 已发布（v0.5.5 / v0.6.0 / v0.7.0，资产 tgz 已上传）；npm 按负责人决定**暂不发布**。
 
 ## 9. 发布后 7 天
 

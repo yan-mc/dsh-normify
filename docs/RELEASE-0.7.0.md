@@ -1,5 +1,7 @@
 # Normify v0.7.0 · Phase 2 发布说明（7 原语默认面 / 评测 / 市场分发）
 
+> **已发布（2026-11-03）**：GitHub Release https://github.com/yan-mc/dsh-normify/releases/tag/v0.7.0（资产 tgz 已上传）；npm 按负责人决定暂不发布。
+
 > 状态：发布候选已通过全部验收（`pack-smoke --all --strict` PASS 43 / FAIL 0）。推送与 npm publish 由仓库负责人执行。
 
 ## 一句话

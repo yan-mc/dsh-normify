@@ -1,5 +1,7 @@
 # Normify v0.5.5 · P0 止血：兼容当前 DSH 0.2.x（发布说明草稿）
 
+> **已发布（2026-11-03）**：GitHub Release https://github.com/yan-mc/dsh-normify/releases/tag/v0.5.5（资产 tgz 已上传）；npm 按负责人决定暂不发布。
+
 > 本文件是**发布说明草稿**：带 `[待发布填写]` 的字段在打包/发布后补齐；粘贴到 GitHub Release 即可。
 
 ---
