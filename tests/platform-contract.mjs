@@ -189,7 +189,7 @@ async function main() {
     assert('插件导出 ' + field, plug[field] !== undefined, field === 'Config' || field === 'apply' ? typeof plug[field] : JSON.stringify(plug[field]))
 
   try {
-    plug.apply(ctx, { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8, approveDestructive: false })
+    plug.apply(ctx, { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8, approveDestructive: false, toolset: 'full' })
     ok('apply()', '真实 0.2.1 Context 下无异常')
   } catch (error) {
     fail('apply()', String(error?.stack ?? error).split('\n').slice(0, 5).join(' | '))
@@ -271,6 +271,21 @@ async function main() {
     if (s.invocation?.modelInvocable !== true) check.push('invocation.modelInvocable')
     assert('skill normify-gen 形状合法', check.length === 0, check.join('; '))
   }
+  // 0.7.0 工具面默认切换：默认 7 原语；legacyTools 追加 31 旧名；toolset=full 保持 31
+  const captureApply = (overrides) => {
+    const map = new Map()
+    const c = { tools: { register: (d) => map.set(d.name, d) }, skills: { register: () => () => {} },
+      logger: { info: () => {}, warn: () => {} }, effect: () => {}, on: () => {} }
+    plug.apply(c, { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8, approveDestructive: false, toolset: 'core', legacyTools: false, ...overrides })
+    return map
+  }
+  const primitiveNames = ['normify_project', 'normify_read', 'normify_write', 'normify_check', 'normify_build', 'normify_render', 'normify_change']
+  const coreTools = captureApply({})
+  ok('默认工具面 = 7 原语', coreTools.size === 7 && primitiveNames.every((n) => coreTools.has(n)), '实际 ' + coreTools.size)
+  const legacyTools = captureApply({ legacyTools: true })
+  ok('legacyTools 模式 = 7 原语 + 31 旧名', legacyTools.size === 38 && primitiveNames.every((n) => legacyTools.has(n)) && legacyTools.has('normify_module_upsert'), '实际 ' + legacyTools.size)
+  const fullTools = captureApply({ toolset: 'full' })
+  ok('toolset=full 模式 = 31 旧工具', fullTools.size === 31 && fullTools.has('normify_module_upsert') && !fullTools.has('normify_read'), '实际 ' + fullTools.size)
 }
 
 function writeSummary() {

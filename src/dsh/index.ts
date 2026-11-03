@@ -17,8 +17,10 @@ export interface Config {
     devCompanionReminderAfter: number;
     /** destroy 类工具（module_delete / layout_delete）是否走一次性审批（默认开，防误删）。 */
     approveDestructive: boolean;
-    /** 工具面：full=31 个旧工具（默认，0.6 兼容）；core=7 个原语（0.7 目标面，0.6 起 opt-in）。 */
+    /** 工具面：core=7 个原语（0.7 默认）；full=31 个旧工具（0.6 兼容面，显式 opt-in）。 */
     toolset: 'full' | 'core';
+    /** toolset=core 时同时注册旧 31 个工具名（过渡 1 个 minor，默认 false）。 */
+    legacyTools: boolean;
 }
 export const Config = z.object({
     rootDir: z.string().default('.'),
@@ -26,7 +28,8 @@ export const Config = z.object({
     devCompanionReminder: z.boolean().default(false),
     devCompanionReminderAfter: z.number().default(8),
     approveDestructive: z.boolean().default(true),
-    toolset: z.string().default('full'),
+    toolset: z.string().default('core'),
+    legacyTools: z.boolean().default(false),
 });
 function readPluginVersion(): string {
     try {
@@ -38,8 +41,8 @@ function readPluginVersion(): string {
     }
 }
 export function apply(ctx: Context, config: Config): void {
-    const toolset: 'full' | 'core' = config.toolset === 'core' ? 'core' : 'full';
-    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual, version: readPluginVersion(), toolset });
+    const toolset: 'full' | 'core' = config.toolset === 'full' ? 'full' : 'core';
+    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual, version: readPluginVersion(), toolset, legacyTools: config.legacyTools });
     installCompanionReminder(ctx, config);
     installDestructiveApproval(ctx, config);
     const skillRegistered = registerSkill(ctx);
@@ -111,7 +114,7 @@ interface ApprovalContext {
 function installDestructiveApproval(ctx: Context, config: Config): void {
     if (!config.approveDestructive)
         return;
-    const behaviors = toolBehaviors({ rootDir: config.rootDir, requireBilingual: config.requireBilingual, toolset: config.toolset === 'core' ? 'core' : 'full' });
+    const behaviors = toolBehaviors({ rootDir: config.rootDir, requireBilingual: config.requireBilingual, toolset: config.toolset === 'full' ? 'full' : 'core', legacyTools: config.legacyTools });
     const anyCtx = ctx as unknown as ApprovalContext;
     const DESTRUCTIVE_OPS = new Set(['delete', 'layout_delete']);
     anyCtx.on?.('tools/pre-execute', async (exec, next) => {

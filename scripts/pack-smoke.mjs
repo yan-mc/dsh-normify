@@ -22,7 +22,7 @@
  *   --pnpm <file>          pnpm 入口（默认探测 DSH runtime / PATH）
  *   --contract-version <v> 契约档安装的 dsh-tools 版本（默认 0.2.1-rc.5）
  *   --cordis-version <v>   契约档安装的 cordis 版本（默认 4.0.5）
- *   --expect-tools <n>     期望注册工具数（默认从 lib/tools.js 的 register( 计数推断，兜底 31）
+ *   --expect-tools <n>     期望注册工具数（默认从 lib/core/toolset.js 的 register( 计数推断，兜底 31；契约档显式以 full 面加载）
  *   --mount-timeout <ms>   boot 档「挂载探测」等待上限（默认 25000）
  *   --no-mount             boot 档跳过真实挂载探测（只做 pack+install+dump-config）
  *   --keep                 保留临时目录（默认清理）
@@ -804,7 +804,7 @@ async function tierContract() {
     else pass('contract', `plugin/export:${field}`, `${field} = ${field === 'apply' || field === 'Config' ? typeof plug[field] : JSON.stringify(plug[field])}`)
   }
   try {
-    plug.apply(ctxReal, { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8 })
+    plug.apply(ctxReal, { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8, toolset: 'full' })
   } catch (e) {
     return fail('contract', 'plugin/apply', 'apply() 抛异常（真实 0.2.1 Context 下加载失败）', String(e?.stack ?? e).split('\n').slice(0, 6).join('\n'))
   }

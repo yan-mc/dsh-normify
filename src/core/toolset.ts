@@ -25,8 +25,10 @@ export interface ToolEnv {
     requireBilingual: boolean;
     /** 插件/CLI 版本（写入 structure-manifest.json；缺省 '0'）。 */
     version?: string;
-    /** 工具面：full=31 个旧工具（默认，0.6 兼容面）；core=7 个原语（0.7 目标面，opt-in）。 */
+    /** 工具面：core=7 个原语（0.7 默认）；full=31 个旧工具。 */
     toolset?: 'full' | 'core';
+    /** toolset=core 时是否同时注册旧 31 个工具名（过渡 1 个 minor，默认 false）。 */
+    legacyTools?: boolean;
 }
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */

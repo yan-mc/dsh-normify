@@ -15,9 +15,12 @@ interface ToolService {
     register?: (def: unknown) => void;
 }
 
-/** 当前 toolset 的工具规格（full=31 旧面；core=7 原语）。 */
+/** 当前工具面：full=31 旧面；core=7 原语（legacyTools 时追加旧 31 名过渡）。 */
 function specsFor(env: ToolEnv): NormifyToolSpec[] {
-    return env.toolset === 'core' ? createNormifyPrimitiveTools(env) : createNormifyTools(env);
+    if (env.toolset === 'full')
+        return createNormifyTools(env);
+    const primitives = createNormifyPrimitiveTools(env);
+    return env.legacyTools === true ? [...primitives, ...createNormifyTools(env)] : primitives;
 }
 
 /** 工具名 → 行为（read/write/destroy/idempotent），供审批/护栏使用。 */

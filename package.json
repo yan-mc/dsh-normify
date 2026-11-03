@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-normify",
-  "version": "0.6.0",
-  "description": "Normify（结构编译器）：人机共读的分形模块树结构数据——模块源数据零容忍校验、确定性编译（五件产物 + 结构 SBOM + 回执自证链）、单文件交互架构图、伴随开发流程与跨 agent CLI。0.6.0：core/dsh/cli 分层、CLI、结构 SBOM/语义 diff/verify、DSH 适配层（真实 output schema/presenters/审批）、测试与 CI 矩阵、DSH 契约漂移检测。只支持当前最新 DSH（0.2.x）。",
+  "version": "0.7.0",
+  "description": "Normify（结构编译器）：人机共读的分形模块树结构数据——模块源数据零容忍校验、确定性编译（五件产物 + 结构 SBOM + 回执自证链）、单文件交互架构图、伴随开发流程与跨 agent CLI。0.7.0：默认工具面切换为 7 原语（project/read/write/check/build/render/change，op 枚举；legacyTools 过渡旧 31 名）、结构 SBOM/语义 diff/verify、市场分发材料。只支持当前最新 DSH（0.2.x）。",
   "type": "module",
   "main": "./lib/dsh/index.js",
   "types": "./lib/types/dsh/index.d.ts",

@@ -7,6 +7,30 @@
 > 《正式规范》《使用说明》重建源码；`[0.2.0]`–`[0.4.1]` 的条目系按上述记录**追述补写**，非原始文本。
 
 
+## [0.7.0] - 2026-11-03
+
+Phase 2「形态升级」：默认工具面切换为 7 原语（breaking，配 legacyTools 过渡），补齐评测与市场分发材料。
+
+### 工具面（breaking）
+
+- 默认注册 7 个原语：normify_project / normify_read / normify_write / normify_check / normify_build / normify_render / normify_change（op 枚举精确约束，见 README 工具面章节）。
+- 过渡：config.legacyTools=true 时同时注册旧 31 个工具名（1 个 minor 后移除）；config.toolset="full" 可完全回到旧面。
+- 工具定义仍具备真实 output.schema / presentationMeta / presentCall / presentResult；destroy 操作（含 normify_write 的 delete/layout_delete）走 tools/pre-execute ask 审批。
+
+### 评测
+
+- 新增 eval/harness.mjs：grep / tree.json / normify CLI 三 arm × ≥20 任务 × n=3 的检索层评测；结果见 docs/EVAL-RESULTS.md；docs/EVAL.md 给出 DSH 内 LLM A/B 的 n≥3/独立 profile/预注册指标/盲评协议（本次不宣称端到端 agent 收益）。
+
+### 分发
+
+- 新增 docs/MARKET.md：官方 plugin market（索引源）/ dshbase / dshhub 上架材料与需用户执行的发布步骤。
+- ADR-0011（Harness 内 UI 面板：0.7 不做，0.8/1.0 重评）与 ADR-0012（MCP 薄适配：默认不做，CLI-first）。
+
+### 其他
+
+- CLI 保持可用（内部走 full 工具集，覆盖全部领域命令）；五件产物 + SBOM + verify 与 0.6.0 一致，结构数据 v1 不变，无需迁移。
+- 0.6.0 的架构/适配层/测试矩阵/性能改进全部保留。
+
 ## [0.6.0] - 2026-11-03
 
 Phase 1「内部重构」：公开工具名/数据格式不变，新增 CLI、结构 SBOM、语义 diff、回执自证与现代化 DSH 适配层。

@@ -16,7 +16,7 @@ const plug = await import(PLUGIN)
 const tools = new Map()
 plug.apply({ tools: { register: (d) => tools.set(d.name, d) }, skills: { register: () => () => {} },
   logger: { info: () => {}, warn: () => {} }, effect: () => {}, on: () => {} },
-  { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8 })
+  { rootDir: '.', requireBilingual: true, devCompanionReminder: false, devCompanionReminderAfter: 8, toolset: 'full' })
 const raw = (n, a) => tools.get(n).execute(a ?? {})
 const call = async (n, a) => { try { return await raw(n, a) } catch (e) { return { ok: false, error: { code: 'thrown', message: String(e?.message ?? e) } } } }
 const hex = (s) => createHash('sha256').update(s).digest('hex')
