@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+const core = await import(new URL('../lib/core/index.js', import.meta.url).href)
 
 const PLUGIN = new URL('../lib/dsh/index.js', import.meta.url).href
 const plug = await import(PLUGIN)
@@ -162,6 +163,26 @@ const chgDir = join(CHG, 'changes')
 writeFileSync(join(chgDir, '2026-11-03-broken.json'), '{ not valid json', 'utf8')
 const listBad = await call('normify_change_list', { dir: CHG })
 ok('⑥a change_list 返回解析错误', listBad.ok === false && /change\/json-parse/.test(JSON.stringify(listBad.errors ?? listBad)), JSON.stringify(listBad.errors ?? listBad).slice(0, 160))
+
+console.log('\n== ⑦ 语义化结构 diff ==')
+const DIFF = join(work, 'normify-diff').replace(/\\/g, '/')
+await call('normify_project_init', { dir: DIFF, root: { id: 'dft', name: L('差异', 'Diff'), description: L('diff 测试', 'diff test') } })
+const apiRun = [{ protocol: 'rpc', path: 'run', description: L('跑', 'run') }]
+await call('normify_module_batch', { dir: DIFF, mode: 'upsert', items: [{ frontmatter: fm('dft.core', 'dft', ['src/a.ts'], apiRun) }] })
+await call('normify_build', { dir: DIFF })
+const beforeTree = JSON.parse(readFileSync(join(DIFF, 'tree.json'), 'utf8'))
+await call('normify_module_batch', { dir: DIFF, mode: 'upsert', items: [{ frontmatter: fm('dft.core', 'dft', ['src/a.ts'], [...apiRun, { protocol: 'rpc', path: 'stop', description: L('停', 'stop') }]) }] })
+await call('normify_build', { dir: DIFF })
+const afterTree = JSON.parse(readFileSync(join(DIFF, 'tree.json'), 'utf8'))
+const d1 = core.diffTrees(beforeTree, afterTree, 'before', 'after')
+ok('⑦a diff 检出 API 新增与模块变化', d1.changed === true && d1.apis.added.includes('rpc:stop') && d1.modules.changed.some(c => c.id === 'dft.core' && c.fields.includes('apis')), JSON.stringify(d1.summary))
+ok('⑦b 纯新增不算 breaking', d1.breaking === false)
+await call('normify_module_batch', { dir: DIFF, mode: 'upsert', items: [{ frontmatter: fm('dft.core', 'dft', ['src/a.ts'], []) }] })
+await call('normify_build', { dir: DIFF })
+const afterTree2 = JSON.parse(readFileSync(join(DIFF, 'tree.json'), 'utf8'))
+const d2 = core.diffTrees(afterTree, afterTree2, 'after', 'after-remove')
+ok('⑦c diff 将 API 删除标记为 breaking', d2.breaking === true && d2.apis.removed.length >= 1, JSON.stringify(d2.apis.removed))
+ok('⑦d diff 无变化时 changed=false', core.diffTrees(afterTree2, afterTree2).changed === false && core.diffTrees(afterTree2, afterTree2).summary === '结构无变化')
 
 console.log('\n=== 结果：' + (fails.length === 0 ? '全部 PASS' : 'FAIL ' + fails.length + ' 项 → ' + fails.join(' | ')) + ' ===')
 rmSync(work, { recursive: true, force: true })

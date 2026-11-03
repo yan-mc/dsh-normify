@@ -18,7 +18,7 @@
  * 退出码：0 成功；2 校验/L2 错误；3 漂移；4 参数错误；6 安全拒绝；5 其它失败。
  */
 import { readFileSync } from 'node:fs';
-import { resolveProject, verifyArtifacts } from '../core/index.js';
+import { diffTrees, loadTreeForDiff, resolveProject, verifyArtifacts } from '../core/index.js';
 import { createNormifyTools } from '../core/toolset.js';
 import type { NormifyToolSpec, ToolEnv } from '../core/toolset.js';
 
@@ -50,6 +50,7 @@ const COMMANDS: Record<string, { tool: string; help: string }> = {
     check: { tool: 'normify_check', help: '设计预检（--args-json 传拟建模块）' },
     build: { tool: 'normify_build', help: '编译产物（tree/outline/api-index/structure-manifest/receipt）' },
     verify: { tool: '', help: '校验回执与全部产物哈希（receipt.sha256 → receipt → artifacts）' },
+    diff: { tool: '', help: '语义化结构 diff：--from <目录|tree.json> --to <目录|tree.json> [--fail-on-breaking|--fail-on-change]' },
     render: { tool: 'normify_render', help: '渲染单文件 HTML（--out 纯文件名）' },
     sync: { tool: 'normify_sync', help: '增量同步规划（--repo-root、--diff）' },
     'change-open': { tool: 'normify_change_open', help: '开启变更（--args-json 传 modules/acceptance 等）' },
@@ -214,6 +215,28 @@ async function main(): Promise<void> {
             process.stderr.write(JSON.stringify({ ok: false, error: { code: e.code ?? 'internal', message: e.message } }, null, 2) + '\n');
             process.exit(4);
         }
+    }
+    if (parsed.command === 'diff') {
+        const from = typeof parsed.flags.from === 'string' ? parsed.flags.from : undefined;
+        const to = typeof parsed.flags.to === 'string' ? parsed.flags.to
+            : typeof parsed.flags.dir === 'string' ? parsed.flags.dir : undefined;
+        if (from === undefined || to === undefined) {
+            process.stderr.write('diff 需要 --from <项目目录|tree.json> 与 --to <项目目录|tree.json>（--to 也可用 --dir）\n');
+            process.exit(4);
+        }
+        const a = await loadTreeForDiff(from);
+        const b = await loadTreeForDiff(to);
+        if (a.tree === null || b.tree === null) {
+            process.stdout.write(JSON.stringify({ ok: false, errors: [...a.errors, ...b.errors] }, null, 2) + '\n');
+            process.exit(4);
+        }
+        const diff = diffTrees(a.tree, b.tree, a.source, b.source);
+        process.stdout.write(JSON.stringify(diff, null, 2) + '\n');
+        if (parsed.flags['fail-on-breaking'] === true && diff.breaking)
+            process.exit(3);
+        if (parsed.flags['fail-on-change'] === true && diff.changed)
+            process.exit(3);
+        process.exit(0);
     }
     const specs = createNormifyTools(env);
     if (parsed.command === 'tools') {

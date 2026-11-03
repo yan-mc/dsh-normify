@@ -15,6 +15,7 @@ export * from './engine/changes.js';
 export * from './engine/edit.js';
 export * from './engine/validate.js';
 export * from './engine/compile.js';
+export * from './engine/diff.js';
 export * from './engine/render.js';
 export * from './engine/companion.js';
 export * from './engine/reference.js';
