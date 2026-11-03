@@ -51,7 +51,7 @@
 | `pack-smoke --all --strict`（static/contract/boot） | **PASS 43 / FAIL 0 / WARN 0** |
 | static | 15 PASS：engines 门禁解除、bundle patch 自洽、files 覆盖、版本单源 0.6.0、lib↔src 24 文件对齐、31 工具 |
 | contract | 18 PASS：真实 ToolRuntime 31 工具可见、parameters/output.schema 通过 0.2.1 子集、presenters 存在、skill 注册 |
-| boot | 8 PASS：`pnpm pack` 266,546 B → 临时 DSH_HOME profile → `dsh plugin add` → dump-config 含插件层 → headless mount 无错误 |
+| boot | 8 PASS：`pnpm pack` 267,045 B（tag v0.6.0 重建资产） → 临时 DSH_HOME profile → `dsh plugin add` → dump-config 含插件层 → headless mount 无错误 |
 
 ## 安装与升级
 
@@ -64,8 +64,8 @@
 | 项 | 值 |
 |---|---|
 | 附件 | `dsh-external-dsh-normify-0.6.0.tgz` |
-| 体积 | 266,546 B |
-| SHA-256 | `8282a8861753b941950418e57516ef57589a708219ab9c65b1903d2bd1666ee1` |
+| 体积 | 267,045 B |
+| SHA-256 | `de48dbe14a3100494a6dedc8a43201f9d3d2408e2832db3806877292d3644cf2` |
 
 ## 已知限制 / 0.7.0 预告
 
