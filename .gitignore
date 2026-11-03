@@ -28,3 +28,6 @@ secrets.json
 *.secret.*
 .npmrc
 .netrc
+
+# 编译产物由 build/pack 生成，不再入库（REFACTOR-PLAN v1.1 / ADR-0009）
+/lib/

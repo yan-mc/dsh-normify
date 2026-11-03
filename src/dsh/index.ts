@@ -2,19 +2,27 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerTools } from './tools.js';
+import type { Context } from '@deepseek-ai/cordis';
 // vendored schemastery：相对路径加载（不依赖注入器环境的包名解析）
 // @ts-expect-error vendored mjs 无声明文件
-const zModule = await import('../vendor/schemastery/lib/index.mjs');
+const zModule = await import('../../vendor/schemastery/lib/index.mjs');
 const z = zModule.default;
 export const name = '@dsh-external/dsh-normify';
 export const inject = ['tools', 'skills'];
+export interface Config {
+    rootDir: string;
+    requireBilingual: boolean;
+    /** 伴随开发提醒钩子（默认关）：连续修改 N 个文件后提醒同步结构树。 */
+    devCompanionReminder: boolean;
+    devCompanionReminderAfter: number;
+}
 export const Config = z.object({
     rootDir: z.string().default('.'),
     requireBilingual: z.boolean().default(true),
     devCompanionReminder: z.boolean().default(false),
     devCompanionReminderAfter: z.number().default(8),
 });
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: Config): void {
     registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual });
     installCompanionReminder(ctx, config);
     const skillRegistered = registerSkill(ctx);
@@ -22,18 +30,37 @@ export function apply(ctx, config) {
         (skillRegistered ? ' + normify-gen 技能（rootDir=' + config.rootDir + '）' : '（技能未注册）');
     ctx.logger?.info?.(message);
 }
+interface ToolContentPart {
+    type: string;
+    text?: string;
+}
+interface ToolExecInfo {
+    name?: string;
+}
+interface ToolExecResult {
+    content?: ToolContentPart[];
+}
+interface ToolDecision {
+    kind: string;
+    content?: ToolContentPart[];
+}
+type ToolExecuteNext = () => Promise<ToolDecision | undefined>;
+type PostExecuteListener = (exec: ToolExecInfo | undefined, result: ToolExecResult | undefined, next: ToolExecuteNext) => Promise<ToolDecision | undefined>;
+interface CompanionContext {
+    on?: (name: string, listener: PostExecuteListener) => void;
+}
 /**
  * 伴随开发提醒钩子（默认关，config.devCompanionReminder=true 开启）：
  * 连续 N 个"写文件类"工具调用后，在下一次写工具结果里追加一条提醒，
  * 提示运行 normify_sync / normify_change_close 同步结构树。只提醒，不自动改写结构。
  */
-function installCompanionReminder(ctx, config) {
+function installCompanionReminder(ctx: Context, config: Config): void {
     if (!config.devCompanionReminder)
         return;
     const threshold = Math.max(1, Math.floor(config.devCompanionReminderAfter));
     const WRITE_TOOLS = /^(write|edit|str_replace_editor|apply_patch|patch|multi_edit|create_file|insert|fs_write)$/i;
     let writes = 0;
-    const anyCtx = ctx;
+    const anyCtx = ctx as unknown as CompanionContext;
     anyCtx.on?.('tools/post-execute', async (exec, result, next) => {
         const nextFn = next;
         const execInfo = exec;
@@ -51,8 +78,23 @@ function installCompanionReminder(ctx, config) {
         return { ...decision, content: [...res.content, { type: 'text', text: reminder }] };
     });
 }
-function registerSkill(ctx) {
-    const skills = ctx.skills;
+interface SkillSpec {
+    name: string;
+    description: string;
+    content: string;
+    provider: string;
+    source: string;
+    resourceBase: { kind: 'directory'; path: string };
+    invocation: { modelInvocable: boolean; userInvocable: boolean };
+}
+interface SkillsService {
+    register?: (spec: SkillSpec) => () => void;
+}
+interface ContextWithSkills {
+    skills?: SkillsService;
+}
+function registerSkill(ctx: Context): boolean {
+    const skills = (ctx as ContextWithSkills).skills;
     const logger = ctx.logger;
     if (skills === undefined || skills.register === undefined) {
         logger?.warn?.('[normify] skills 服务不可用，normify-gen 技能未注册');
@@ -60,7 +102,7 @@ function registerSkill(ctx) {
     }
     try {
         const dir = dirname(fileURLToPath(import.meta.url));
-        const skillDir = join(dir, '..', 'skills', 'normify-gen');
+        const skillDir = join(dir, '..', '..', 'skills', 'normify-gen');
         const raw = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
         const parsed = parseSkillMarkdown(raw);
         if (parsed === null) {
@@ -84,7 +126,7 @@ function registerSkill(ctx) {
         return false;
     }
 }
-function parseSkillMarkdown(raw) {
+function parseSkillMarkdown(raw: string) {
     const lines = raw.split(/\r?\n/);
     if (lines[0] === undefined || lines[0].trim() !== '---')
         return null;
@@ -107,4 +149,3 @@ function parseSkillMarkdown(raw) {
     const body = lines.slice(close + 1).join('\n').replace(/^\n+/, '');
     return { description, body };
 }
-//# sourceMappingURL=index.js.map

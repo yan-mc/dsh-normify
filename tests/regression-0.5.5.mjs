@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
-const PLUGIN = new URL('../lib/index.js', import.meta.url).href
+const PLUGIN = new URL('../lib/dsh/index.js', import.meta.url).href
 const plug = await import(PLUGIN)
 const tools = new Map()
 plug.apply({ tools: { register: (d) => tools.set(d.name, d) }, skills: { register: () => () => {} },

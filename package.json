@@ -3,8 +3,8 @@
   "version": "0.5.5",
   "description": "Normify（归一化框架图构建器）：人机共读的分形项目结构图系统——模块树源数据零容忍校验/编译/渲染，以及 AI 结构数据生成器（31 个工具 + normify-gen 技能 + 渲染数据集 + 伴随开发）。0.5.5：适配 DeepSeek Harness 0.2.x（只支持当前最新版）、安全三破口修复、receipt 自哈希修复、数据正确性与原子写。",
   "type": "module",
-  "main": "./lib/index.js",
-  "types": "./lib/types/index.d.ts",
+  "main": "./lib/dsh/index.js",
+  "types": "./lib/types/dsh/index.d.ts",
   "files": [
     "lib",
     "skills",
@@ -56,8 +56,9 @@
     "@standard-schema/spec": "^1.1.0"
   },
   "scripts": {
-    "build": "bash scripts/build.sh",
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs && node tests/regression-0.5.5.mjs"
+    "test": "node tests/engine-e2e.mjs && node tests/companion-e2e.mjs && node tests/regression-0.5.2.mjs && node tests/regression-0.5.3.mjs && node tests/regression-0.5.4.mjs && node tests/regression-0.5.5.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
   }
 }

@@ -6,13 +6,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
-import { resolveProject, loadAllModules, fingerprintOf } from '../lib/engine/store.js'
-import { batchWrite, patchModule, moveModuleTree, refreshModules, checkProposal } from '../lib/engine/edit.js'
-import { loadPolicyFile, writePolicyFile, l1ValidatePolicy } from '../lib/engine/policy.js'
-import { loadChangeFile, writeChangeFile } from '../lib/engine/changes.js'
-import { closeChange } from '../lib/engine/companion.js'
-import { writeLayoutFile } from '../lib/engine/layout.js'
-import { validateProject } from '../lib/engine/validate.js'
+import { resolveProject, loadAllModules, fingerprintOf } from '../lib/core/engine/store.js'
+import { batchWrite, patchModule, moveModuleTree, refreshModules, checkProposal } from '../lib/core/engine/edit.js'
+import { loadPolicyFile, writePolicyFile, l1ValidatePolicy } from '../lib/core/engine/policy.js'
+import { loadChangeFile, writeChangeFile } from '../lib/core/engine/changes.js'
+import { closeChange } from '../lib/core/engine/companion.js'
+import { writeLayoutFile } from '../lib/core/engine/layout.js'
+import { validateProject } from '../lib/core/engine/validate.js'
 
 const work = mkdtempSync(join(tmpdir(), 'normify-companion-e2e-'))
 const repo = join(work, 'demo-repo')

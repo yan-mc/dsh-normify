@@ -2,38 +2,368 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEP_KINDS, PROTOCOLS } from './engine/types.js';
-import { l1Validate, checkSourceEntry } from './engine/frontmatter.js';
-import { apiKey, isValidId, slugify, splitId } from './engine/ids.js';
-import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, isValidDiffSpec, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from './engine/store.js';
-import { LAYOUT_SCHEMA_VERSION, deleteLayoutFile, edgeKey, l1ValidateLayout, layoutRelPath, listLayoutFiles, loadLayoutFile, writeLayoutFile } from './engine/layout.js';
-import { batchWrite, checkProposal, moveModuleTree, patchModule, previewModuleFile, refreshModules } from './engine/edit.js';
-import { POLICY_SCHEMA_VERSION, defaultPolicyTemplate, evaluatePolicy, l1ValidatePolicy, loadPolicyFile, policyReference, writePolicyFile } from './engine/policy.js';
-import { CHANGE_SCHEMA_VERSION, isValidChangeId, listChangeIds, loadChangeFile, writeChangeFile, l1ValidateChange } from './engine/changes.js';
-import { closeChange } from './engine/companion.js';
-import { validateProject } from './engine/validate.js';
-import { buildProject } from './engine/compile.js';
-import { renderProject } from './engine/render.js';
-import { fmtDiag } from './engine/diag.js';
-import { HELP_TOPICS, toolReference, topicReference } from './engine/reference.js';
-function str(description) { return { type: 'string', description, required: true }; }
-function strOpt(description) { return { type: 'string', description, required: false }; }
-function numOpt(description) { return { type: 'number', description, required: false }; }
-function boolOpt(description) { return { type: 'boolean', description, required: false }; }
+import { DEP_KINDS, PROTOCOLS } from '../core/engine/types.js';
+import { l1Validate, checkSourceEntry } from '../core/engine/frontmatter.js';
+import { apiKey, isValidId, slugify, splitId } from '../core/engine/ids.js';
+import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, isValidDiffSpec, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from '../core/engine/store.js';
+import { LAYOUT_SCHEMA_VERSION, deleteLayoutFile, edgeKey, l1ValidateLayout, layoutRelPath, listLayoutFiles, loadLayoutFile, writeLayoutFile } from '../core/engine/layout.js';
+import { batchWrite, checkProposal, moveModuleTree, patchModule, previewModuleFile, refreshModules } from '../core/engine/edit.js';
+import { POLICY_SCHEMA_VERSION, defaultPolicyTemplate, evaluatePolicy, l1ValidatePolicy, loadPolicyFile, policyReference, writePolicyFile } from '../core/engine/policy.js';
+import { CHANGE_SCHEMA_VERSION, isValidChangeId, listChangeIds, loadChangeFile, writeChangeFile, l1ValidateChange } from '../core/engine/changes.js';
+import { closeChange } from '../core/engine/companion.js';
+import { validateProject } from '../core/engine/validate.js';
+import { buildProject } from '../core/engine/compile.js';
+import { renderProject } from '../core/engine/render.js';
+import { fmtDiag } from '../core/engine/diag.js';
+import { HELP_TOPICS, toolReference, topicReference } from '../core/engine/reference.js';
+
+import type { Context } from '@deepseek-ai/cordis';
+import type { HelpTopic, ToolCatalogEntry } from '../core/engine/reference.js';
+import type { ChangeData, ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, Module, ModuleFile, ModuleState, PolicyData, PolicyRule, SourceRef } from '../core/engine/types.js';
+
+export interface ToolEnv {
+    rootDir: string;
+    requireBilingual: boolean;
+}
+
+/** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
+interface SchemaNode {
+    type?: string;
+    description?: string;
+    required?: boolean | string[];
+    properties?: Record<string, SchemaNode>;
+    items?: SchemaNode;
+    additionalProperties?: boolean;
+    [key: string]: unknown;
+}
+
+/** 递归的 schema 取值：节点本身或节点数组（items/required 等子结构）。 */
+type SchemaValue = SchemaNode | SchemaValue[];
+
+/** params() 编译出的对象级 JSON Schema。 */
+type ObjectSchema = SchemaNode & { required?: string[] };
+
+/** 工具行为标记：read=只读；write=写入；destroy=破坏性；idempotent=幂等。 */
+type ToolBehavior = 'read' | 'write' | 'destroy' | 'idempotent';
+
+/** register() 的工具定义。 */
+interface ToolDef {
+    description: string;
+    behavior: ToolBehavior;
+    parameters?: ObjectSchema;
+}
+
+/** dsh-tools 服务的注册面（可选外部服务）。 */
+interface ToolService {
+    register?: (def: ToolRegistration) => void;
+}
+
+/** 交给 tools.register 的注册对象。 */
+interface ToolRegistration {
+    name: string;
+    description: string;
+    behavior: ToolBehavior;
+    parameters?: ObjectSchema;
+    readOnly: boolean;
+    idempotent: boolean;
+    destructive: boolean;
+    output: {
+        schema: Record<string, unknown>;
+        render: (args: Record<string, unknown>, value: unknown) => { type: string; text: string | undefined }[];
+    };
+    execute: (args: Record<string, unknown>) => Promise<unknown>;
+    isConcurrencySafe?: () => boolean;
+}
+
+/** 结构数据项目定位（slug 或目录绝对路径）。 */
+interface ProjectArgs {
+    project?: string;
+    dir?: string;
+}
+
+/** resolveProject 解析出的结构数据目录。 */
+interface ProjectRef {
+    dir: string;
+    slug: string;
+}
+
+/** 仅需模块 id 的工具实参。 */
+interface IdArgs extends ProjectArgs {
+    id: string;
+}
+
+interface TreeListArgs {
+    root?: string;
+}
+
+interface ModuleListArgs extends ProjectArgs {
+    parent?: string;
+    direct_only?: boolean;
+}
+
+interface ModuleUpsertArgs extends ProjectArgs {
+    frontmatter: Record<string, unknown>;
+    body?: string;
+    expect_updated_at?: string;
+    dry_run?: boolean;
+}
+
+interface RepoRootArgs extends ProjectArgs {
+    repoRoot?: string;
+}
+
+interface HelpArgs {
+    topic?: string;
+}
+
+interface ProjectInitArgs extends ProjectArgs {
+    root?: {
+        id?: string;
+        name?: LocalizedText;
+        description?: LocalizedText;
+        repository?: string;
+    };
+}
+
+interface SyncArgs extends ProjectArgs {
+    repoRoot: string;
+    diff?: string;
+}
+
+interface SearchArgs extends ProjectArgs {
+    query: string;
+    topK?: number;
+}
+
+interface DepsFindArgs extends ProjectArgs {
+    to: string;
+}
+
+interface LayoutUpsertArgs extends ProjectArgs {
+    id: string;
+    mode?: LayoutData['mode'];
+    max_columns?: number;
+    max_api_rows?: number;
+    reading?: LocalizedText;
+    order?: string[];
+    groups?: LayoutGroup[];
+    edge_hints?: LayoutEdgeHint[];
+}
+
+interface RenderArgs extends ProjectArgs {
+    out?: string;
+}
+
+interface FingerprintArgs {
+    repoRoot: string;
+    source: SourceRef[];
+}
+
+interface BriefArgs extends ProjectArgs {
+    task?: string;
+    id?: string;
+    files?: string[];
+    depth?: number;
+}
+
+interface ModulePatchArgs extends ProjectArgs {
+    id: string;
+    patch: Record<string, unknown>;
+    expect_updated_at?: string;
+    dry_run?: boolean;
+}
+
+/** 批量条目：mode=upsert 传 frontmatter；mode=patch 传 patch。 */
+interface BatchItemShape {
+    frontmatter?: Record<string, unknown>;
+    patch?: { id: string; patch: Record<string, unknown> };
+}
+
+interface ModuleBatchArgs extends ProjectArgs {
+    items: BatchItemShape[];
+    mode?: string;
+    dry_run?: boolean;
+}
+
+interface ModuleMoveArgs extends ProjectArgs {
+    id: string;
+    new_id?: string;
+    new_parent?: string;
+    dry_run?: boolean;
+}
+
+interface ModuleRefreshArgs extends ProjectArgs {
+    ids?: string[];
+    all?: boolean;
+    repoRoot: string;
+    activate?: boolean;
+    dry_run?: boolean;
+}
+
+interface ChangeOpenArgs extends ProjectArgs {
+    id?: string;
+    title: LocalizedText;
+    intent: LocalizedText;
+    modules: ChangeModules;
+    acceptance: string[];
+    status?: 'proposed' | 'in_progress';
+    note?: string;
+}
+
+interface ChangeUpdateArgs extends ProjectArgs {
+    id: string;
+    patch: Record<string, unknown>;
+}
+
+interface ChangeListArgs extends ProjectArgs {
+    id?: string;
+    status?: string;
+}
+
+interface ChangeCloseArgs extends ProjectArgs {
+    id: string;
+    repoRoot?: string;
+    activate?: boolean;
+    render?: boolean;
+    note?: string;
+}
+
+interface PolicyUpsertArgs extends ProjectArgs {
+    rules: PolicyRule[];
+    dry_run?: boolean;
+}
+
+/** normify_check 的拟建模块条目。 */
+interface ProposalModuleShape {
+    id: string;
+    parent?: string | null;
+    state?: ModuleState;
+}
+
+/** normify_check 的拟新增依赖条目。 */
+interface ProposalDepShape {
+    from: string;
+    to: string;
+    kind?: string;
+    to_api?: string;
+}
+
+interface CheckArgs extends ProjectArgs {
+    modules?: ProposalModuleShape[];
+    deps?: ProposalDepShape[];
+}
+
+/** normify_tree_list 的一行。 */
+interface TreeListRow {
+    slug: string;
+    dir: string;
+    trees: { tree_id: string; root_uid: string; repository: string | null }[];
+}
+
+/** normify_search 的一条命中。 */
+interface SearchHit {
+    id: string;
+    name: string;
+    snippet: string;
+    api?: string;
+}
+
+/** 变更摘要（brief 的 open_changes 与 change_list 的公共部分）。 */
+interface ChangeSummaryRow {
+    id: string;
+    status: ChangeStatus;
+    title: LocalizedText;
+    modules: ChangeModules;
+}
+
+/** normify_change_list 的一行。 */
+interface ChangeListRow extends ChangeSummaryRow {
+    acceptance_count: number;
+    created_at: string;
+    closed_at: string | null;
+}
+
+/** normify_policy_get 的返回体（policy.yml 不存在时补 template）。 */
+interface PolicyGetOutput {
+    ok: boolean;
+    file: string;
+    exists: boolean;
+    policy: PolicyData | null;
+    rule_count: number;
+    reference: string;
+    template?: string;
+}
+
+/** normify_brief 的新模块建议。 */
+interface ModuleSuggestion {
+    file: string;
+    suggested_parent: string | null;
+    suggested_id: string | null;
+    state: string;
+    note: string;
+}
+
+/** normify_brief 的候选模块画像。 */
+interface BriefTarget {
+    id: string;
+    state: ModuleState;
+    name: LocalizedText;
+    description: LocalizedText;
+    file: string | null;
+    tags: string[];
+    source: SourceRef[];
+    apis: { key: string; description: LocalizedText }[];
+    deps_out: { to: string; kind: string; to_api: string | null }[];
+    deps_in: { from: string; kind: string }[];
+    has_layout: boolean;
+    children: string[];
+}
+
+/** normify_brief 的影响面。 */
+interface ImpactSummary {
+    direct: string[];
+    transitive: string[];
+    cross_tree: string[];
+}
+
+/** normify_sync 的 API 增删行。 */
+interface ApiDiffRow {
+    module: string;
+    key: string;
+}
+
+/** normify_sync 的破坏性 API 删除行。 */
+interface BreakingApiRow extends ApiDiffRow {
+    reason: string;
+}
+
+/** tree.json 中模块条目的 API 快照（API diff 只需要 key）。 */
+interface TreeApiEntry {
+    key?: string;
+}
+
+/** build 产物 tree.json 的最小快照（只读取 modules[*].apis[*].key）。 */
+interface TreeSnapshot {
+    modules: Record<string, { apis?: TreeApiEntry[] }>;
+}
+function str(description: string): SchemaNode { return { type: 'string', description, required: true }; }
+function strOpt(description: string): SchemaNode { return { type: 'string', description, required: false }; }
+function numOpt(description: string): SchemaNode { return { type: 'number', description, required: false }; }
+function boolOpt(description: string): SchemaNode { return { type: 'boolean', description, required: false }; }
 /**
  * 把作者态 schema（属性内联 `required: true`，方便手写）编译为标准 JSON Schema：
  * 属性级 required 提升为对象级 `required: string[]`，对象补 `additionalProperties: false`。
  * dsh 0.1.5+ 会把工具 parameters 原样交给模型/provider，必须是规范 JSON Schema
  *（`required: true` 不是合法关键字）。
  */
-function toJsonSchema(node) {
+function toJsonSchema(node: unknown): SchemaValue {
     if (Array.isArray(node))
-        return node.map((entry) => toJsonSchema(entry));
+        return node.map((entry: unknown) => toJsonSchema(entry));
     if (node === null || typeof node !== 'object')
-        return node;
-    const source = node;
-    const out = {};
-    const required = [];
+        return node as SchemaValue;
+    const source = node as SchemaNode;
+    const out: SchemaNode = {};
+    const required: string[] = [];
     let hasProperties = false;
     for (const [key, value] of Object.entries(source)) {
         if (key === 'required') {
@@ -50,12 +380,12 @@ function toJsonSchema(node) {
         }
         if (key === 'properties' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
             hasProperties = true;
-            const properties = {};
-            for (const [propKey, propValue] of Object.entries(value)) {
-                const prop = propValue;
+            const properties: Record<string, SchemaNode> = {};
+            for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
+                const prop = propValue as SchemaNode;
                 if (prop !== null && typeof prop === 'object' && prop.required === true)
                     required.push(propKey);
-                properties[propKey] = toJsonSchema(propValue);
+                properties[propKey] = toJsonSchema(propValue) as SchemaNode;
             }
             out.properties = properties;
             continue;
@@ -69,11 +399,11 @@ function toJsonSchema(node) {
     }
     return out;
 }
-function params(props, _required = []) {
+function params(props: Record<string, SchemaNode>, _required: string[] = []): ObjectSchema {
     // `_required` 保留旧调用签名；必填信息已内联在属性描述里。
-    return toJsonSchema({ type: 'object', properties: props });
+    return toJsonSchema({ type: 'object', properties: props }) as ObjectSchema;
 }
-function l10nParam(description) {
+function l10nParam(description: string): SchemaNode {
     return {
         type: 'object',
         description,
@@ -84,7 +414,7 @@ function l10nParam(description) {
         },
     };
 }
-function sourceParam() {
+function sourceParam(): SchemaNode {
     return {
         type: 'array',
         description: '代码位置证据：仓库内相对路径 + 可选行号',
@@ -100,7 +430,7 @@ function sourceParam() {
         },
     };
 }
-function apiParam() {
+function apiParam(): SchemaNode {
     return {
         type: 'array',
         description: '本模块全部 API（仅叶子模块允许；protocol: ' + PROTOCOLS.join('|') + '；http 必须带大写 method）',
@@ -117,7 +447,7 @@ function apiParam() {
         },
     };
 }
-function depParam() {
+function depParam(): SchemaNode {
     return {
         type: 'array',
         description: '出向依赖箭头（只存源端；kind: ' + DEP_KINDS.join('|') + '；to 为目标模块 id，可跨树）',
@@ -135,7 +465,7 @@ function depParam() {
         },
     };
 }
-function l10nOptParam(description) {
+function l10nOptParam(description: string): SchemaNode {
     return {
         type: 'object',
         description,
@@ -146,7 +476,7 @@ function l10nOptParam(description) {
         },
     };
 }
-function layoutGroupParam() {
+function layoutGroupParam(): SchemaNode {
     return {
         type: 'array',
         description: '视觉分组：把直接子模块按语义聚类渲染（mode=groups 时必填）',
@@ -162,7 +492,7 @@ function layoutGroupParam() {
         },
     };
 }
-function layoutHintParam() {
+function layoutHintParam(): SchemaNode {
     return {
         type: 'array',
         description: '单条边的绘制提示（可选）：车道 / 曲线样式 / 捆扎',
@@ -182,52 +512,52 @@ function layoutHintParam() {
         },
     };
 }
-function strArrayOpt(description) {
+function strArrayOpt(description: string): SchemaNode {
     return { type: 'array', description, required: false, items: { type: 'string', description: '条目', required: true } };
 }
-function strArray(description) {
+function strArray(description: string): SchemaNode {
     return { type: 'array', description, required: true, items: { type: 'string', description: '条目', required: true } };
 }
-function objArrayParam(description, required = false) {
+function objArrayParam(description: string, required = false): SchemaNode {
     return { type: 'array', description, required, items: { type: 'object', description: '对象条目' } };
 }
-function freeObjectParam(description, required = false) {
+function freeObjectParam(description: string, required = false): SchemaNode {
     return { type: 'object', description, required };
 }
 /** frontmatter 的字段 schema：保持"作者态"（属性内联 required），
  *  由外层 params() 统一编译，避免二次编译丢掉必填表。 */
-function moduleParams() {
+function moduleParams(): SchemaNode {
     return {
         type: 'object',
         description: '模块 frontmatter（写时执行 L1 校验）',
         required: true,
         properties: {
-            uid: str('8 位小写 hex 随机串（不变标识，全项目唯一）'),
-            id: str('路径式 id：小写段点分隔，含树名段 ≤ 12 段，如 demo.order.checkout.payment'),
-            parent: str('父模块 id（= id 去掉最后一段）；根模块传 JSON null 或字符串 "null"'),
-            name: l10nParam('模块名（≤60 字符）'),
-            description: l10nParam('功能介绍（≤500 字符，刻意精炼）'),
-            source: sourceParam(),
-            revision: str('生成时对应的 40 位 git SHA'),
-            updated_at: str('ISO 8601 时间，如 2026-08-30T12:00:00Z'),
-            fingerprint: str('source 指纹（hex；planned 模块可填 pending）'),
-            repository: strOpt('仅根模块：仓库 URL'),
-            state: strOpt('生命周期状态：active | planned | deprecated（默认 active；计划态先建树、后实现）'),
-            replacement: strOpt('仅 state=deprecated：替代模块 id'),
-            tags: strArrayOpt('自由标签（≤12 个，用于检索/分组）'),
-            apis: apiParam(),
-            deps: depParam(),
+        uid: str('8 位小写 hex 随机串（不变标识，全项目唯一）'),
+        id: str('路径式 id：小写段点分隔，含树名段 ≤ 12 段，如 demo.order.checkout.payment'),
+        parent: str('父模块 id（= id 去掉最后一段）；根模块传 JSON null 或字符串 "null"'),
+        name: l10nParam('模块名（≤60 字符）'),
+        description: l10nParam('功能介绍（≤500 字符，刻意精炼）'),
+        source: sourceParam(),
+        revision: str('生成时对应的 40 位 git SHA'),
+        updated_at: str('ISO 8601 时间，如 2026-08-30T12:00:00Z'),
+        fingerprint: str('source 指纹（hex；planned 模块可填 pending）'),
+        repository: strOpt('仅根模块：仓库 URL'),
+        state: strOpt('生命周期状态：active | planned | deprecated（默认 active；计划态先建树、后实现）'),
+        replacement: strOpt('仅 state=deprecated：替代模块 id'),
+        tags: strArrayOpt('自由标签（≤12 个，用于检索/分组）'),
+        apis: apiParam(),
+        deps: depParam(),
         },
     };
 }
 /** 项目定位参数（属性映射，供 `params({ ...projectParams() })` 展开）。 */
-function projectParams(_required = false) {
+function projectParams(_required = false): { project: SchemaNode; dir: SchemaNode } {
     return {
         project: strOpt('项目 slug（结构数据目录 = normify-<slug>）；也可以直接传结构数据目录绝对路径'),
         dir: strOpt('结构数据目录绝对路径（与 project 二选一）'),
     };
 }
-function toErrorPayload(error) {
+function toErrorPayload(error: unknown): { ok: false; error: { code: string; message: string } } {
     if (error instanceof NormifyError) {
         return { ok: false, error: { code: error.code, message: error.message } };
     }
@@ -236,7 +566,7 @@ function toErrorPayload(error) {
     }
     return { ok: false, error: { code: 'internal', message: String(error) } };
 }
-function diagnosticsOut(errors, warnings) {
+function diagnosticsOut(errors: Diagnostic[], warnings: Diagnostic[]): { ok: boolean; errors: string[]; warnings: string[]; summary: string } {
     return {
         ok: errors.length === 0,
         errors: errors.map(fmtDiag),
@@ -244,17 +574,17 @@ function diagnosticsOut(errors, warnings) {
         summary: errors.length + ' error / ' + warnings.length + ' warning',
     };
 }
-export function registerTools(ctx, env) {
-    const toolCatalog = [];
-    const register = (key, def, execute) => {
+export function registerTools(ctx: Context, env: ToolEnv): void {
+    const toolCatalog: ToolCatalogEntry[] = [];
+    const register = <A>(key: string, def: ToolDef, execute: (args: A) => Promise<unknown>): void => {
         toolCatalog.push({ name: key, description: def.description, behavior: def.behavior, parameters: def.parameters });
-        const tools = ctx.tools;
+        const tools = (ctx as unknown as { tools?: ToolService }).tools;
         if (tools === undefined || tools.register === undefined)
             return;
         const behavior = def.behavior;
-        const wrapped = async (rawArgs) => {
+        const wrapped = async (rawArgs: unknown): Promise<unknown> => {
             try {
-                const args = (rawArgs ?? {});
+                const args = (rawArgs ?? {}) as Record<string, unknown>;
                 const required = def.parameters?.required ?? [];
                 // `parent` 允许显式 null（根模块）；其余必填参数不允许 null/空串。
                 const missing = required.filter(r => {
@@ -268,7 +598,7 @@ export function registerTools(ctx, env) {
                 if (missing.length > 0) {
                     return { ok: false, error: { code: 'args/missing', message: '缺少必填参数: ' + missing.join(', ') } };
                 }
-                return await execute(args);
+                return await execute(args as A);
             }
             catch (error) {
                 return toErrorPayload(error);
@@ -293,12 +623,12 @@ export function registerTools(ctx, env) {
             ...(behavior === 'read' ? { isConcurrencySafe: () => true } : {}),
         });
     };
-    const resolve = (args, create = false) => resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create });
+    const resolve = (args: ProjectArgs, create = false): Promise<ProjectRef> => resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create });
     /**
      * 读取项目全部模块；只要存在无法解析/校验的模块文件就抛错。
      * 0.5.4 及以前各处只取 `.files`，会静默吞掉坏文件（读到的模块数变少但 ok:true，P0-04 / 审计 A6）。
      */
-    const loadFilesOrThrow = async (projectDir) => {
+    const loadFilesOrThrow = async (projectDir: string): Promise<ModuleFile[]> => {
         const loaded = await loadAllModules(projectDir);
         if (loaded.errors.length > 0) {
             const preview = loaded.errors.slice(0, 3).map(d => '[' + d.code + '] ' + d.message).join('；');
@@ -313,12 +643,12 @@ export function registerTools(ctx, env) {
         parameters: params({
             root: strOpt('搜索根目录（默认插件配置的 rootDir，可传工作区绝对路径）'),
         }),
-    }, async (args) => {
+    }, async (args: TreeListArgs) => {
         const rootDir = typeof args.root === 'string' && args.root.trim() !== '' ? args.root : env.rootDir;
-        const projects = listProjects(rootDir);
-        const out = [];
+        const projects: ProjectRef[] = listProjects(rootDir);
+        const out: TreeListRow[] = [];
         for (const p of projects) {
-            const roots = (await loadFilesOrThrow(p.dir)).filter(f => f.module.parent === null);
+            const roots: ModuleFile[] = (await loadFilesOrThrow(p.dir)).filter(f => f.module.parent === null);
             out.push({
                 slug: p.slug,
                 dir: p.dir,
@@ -334,9 +664,9 @@ export function registerTools(ctx, env) {
             id: str('模块 id 或 uid'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: IdArgs) => {
         const proj = await resolve(args);
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const mf = files.find(f => f.module.id === args.id || f.module.uid === args.id);
         if (mf === undefined)
             return { ok: false, error: { code: 'module/not-found', message: '模块不存在：' + String(args.id) } };
@@ -351,10 +681,10 @@ export function registerTools(ctx, env) {
             direct_only: boolOpt('只列 parent 的直接子模块（默认 false：含整个子树）'),
             ...projectParams(true),
         }, []),
-    }, async (args) => {
+    }, async (args: ModuleListArgs) => {
         const proj = await resolve(args);
-        const files = (await loadFilesOrThrow(proj.dir));
-        const kids = new Map();
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
+        const kids = new Map<string, string[]>();
         for (const f of files) {
             if (f.module.parent === null)
                 continue;
@@ -390,23 +720,23 @@ export function registerTools(ctx, env) {
             root: freeObjectParam('可选：一步创建计划态根模块 {id, name{zh,en}, description{zh,en}, repository?}；省略则只建目录与规则', false),
             ...projectParams(true),
         }),
-    }, async (args) => {
+    }, async (args: ProjectInitArgs) => {
         const proj = await resolve(args, true);
-        const before = (await loadFilesOrThrow(proj.dir));
+        const before: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const policy = await loadPolicyFile(proj.dir);
         const ruleCount = policy.policy?.rules?.length ?? 0;
-        let rootId = null;
+        let rootId: string | null = null;
         const rootArgs = args.root;
         if (rootArgs !== undefined && rootArgs !== null) {
             const id = typeof rootArgs.id === 'string' ? rootArgs.id.trim() : '';
-            if (!isValidId(id) || splitId(id).length !== 1) {
+            if (!isValidId(id) || splitId(id)!.length !== 1) {
                 return { ok: false, error: { code: 'structure/id-format', message: '根模块 id 必须是单段合法 id（如 whiteboard），实际：' + id } };
             }
             if (before.some(f => f.module.id === id)) {
                 rootId = id;
             }
             else {
-                const fm = {
+                const fm: Record<string, unknown> = {
                     uid: randomBytes(4).toString('hex'),
                     id,
                     parent: null,
@@ -455,7 +785,7 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅校验并返回将写入的文件，不落盘'),
             ...projectParams(true),
         }, ['frontmatter']),
-    }, async (args) => {
+    }, async (args: ModuleUpsertArgs) => {
         const proj = await resolve(args, true);
         // dsh 0.1.5+ 会 deepFreeze 工具实参，禁止原地修改：先浅拷贝再规范化 parent。
         const fm = { ...args.frontmatter };
@@ -467,7 +797,7 @@ export function registerTools(ctx, env) {
             return { ok: false, errors: errors.map(fmtDiag), warnings: warnings.map(fmtDiag), summary: errors.length + ' error（未写入）' };
         }
         const existingFiles = await loadFilesOrThrow(proj.dir);
-        const existing = existingFiles.find(f => f.module.id === module.id);
+        const existing: ModuleFile | undefined = existingFiles.find(f => f.module.id === module.id);
         // 单模块 upsert 的结构预检（batch 已有同类预检）：parent 必须已存在，否则会写出孤儿模块。
         if (module.parent !== null && !existingFiles.some(f => f.module.id === module.parent)) {
             return {
@@ -482,7 +812,7 @@ export function registerTools(ctx, env) {
             return { ok: false, error: { code: 'module/conflict', message: '模块已被其他写入修改（updated_at 不一致），请先重新读取：' + module.id } };
         }
         if (args.dry_run === true) {
-            const all = existingFiles.map(f => f.module);
+            const all: Module[] = existingFiles.map(f => f.module);
             return {
                 ok: true,
                 dry_run: true,
@@ -509,11 +839,11 @@ export function registerTools(ctx, env) {
             id: str('要删除的模块 id'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: IdArgs) => {
         const proj = await resolve(args);
         const id = String(args.id);
         // 悬空边预警：全项目扫描指向该子树任何模块的箭头
-        const before = (await loadFilesOrThrow(proj.dir));
+        const before: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const affected = new Set([id]);
         let grew = true;
         while (grew) {
@@ -544,7 +874,7 @@ export function registerTools(ctx, env) {
             id: str('叶子模块 id'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: IdArgs) => {
         const proj = await resolve(args);
         const result = await promoteModule(proj.dir, String(args.id));
         return {
@@ -561,7 +891,7 @@ export function registerTools(ctx, env) {
             repoRoot: strOpt('仓库根目录（提供则校验 source 存在性与 fingerprint 一致性）'),
             ...projectParams(true),
         }, []),
-    }, async (args) => {
+    }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
         const v = await validateProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual });
         return diagnosticsOut(v.errors, v.warnings);
@@ -573,7 +903,7 @@ export function registerTools(ctx, env) {
             repoRoot: strOpt('仓库根目录（启用证据校验）'),
             ...projectParams(true),
         }, []),
-    }, async (args) => {
+    }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
         const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual });
         if (!b.ok) {
@@ -589,7 +919,7 @@ export function registerTools(ctx, env) {
             diff: strOpt('git diff 范围（默认 HEAD；只接受 revision 或 A..B/A...B，禁止以 - 开头）'),
             ...projectParams(true),
         }, ['repoRoot']),
-    }, async (args) => {
+    }, async (args: SyncArgs) => {
         const proj = await resolve(args);
         const repoRoot = String(args.repoRoot);
         const diff = args.diff;
@@ -600,10 +930,10 @@ export function registerTools(ctx, env) {
         if (changed.files === null) {
             return { ok: false, error: { code: 'sync/git-failed', message: changed.error ?? 'git 不可用' } };
         }
-        const files = (await loadFilesOrThrow(proj.dir));
-        const affected = files.filter(f => f.module.source.some(s => changed.files.some(cf => cf === s.path || cf.startsWith(s.path + '/'))));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
+        const affected = files.filter(f => f.module.source.some(s => changed.files!.some(cf => cf === s.path || cf.startsWith(s.path + '/'))));
         const affectedSet = new Set(affected.map(f => f.module.id));
-        const toReview = new Set();
+        const toReview = new Set<string>();
         for (const f of affected) {
             let p = f.module.parent;
             while (p !== null) {
@@ -612,7 +942,7 @@ export function registerTools(ctx, env) {
                 p = pf?.module.parent ?? null;
             }
         }
-        const drift = [];
+        const drift: string[] = [];
         for (const f of affected) {
             const fp = await fingerprintOf(repoRoot, f.module.source);
             if (fp.hash !== null && fp.hash !== f.module.fingerprint)
@@ -623,7 +953,7 @@ export function registerTools(ctx, env) {
         // v2：新增文件 → 建议新模块；失效 source → 待删/待修；API 增删 → 破坏性变更；planned 进度
         const CODE_EXT = /\.(ts|tsx|js|mjs|cjs|mts|cts|py|java|kt|go|rs|cs|c|cpp|h|hpp|rb|php|swift|scala|lua|vue|svelte|md|yml|yaml|json)$/i;
         const IGNORE_DIR = /^(lib|dist|build|out|node_modules|vendor|coverage|\.git|_tmp|\.dsh-module-fallback)\//;
-        const kindRank = (p) => p.startsWith('src/') ? 0 : /^(scripts|tests)\//.test(p) ? 1 : p.startsWith('skills/') ? 2 : p.startsWith('docs/') ? 4 : /\.md$/i.test(p) ? 5 : 3;
+        const kindRank = (p: string): number => p.startsWith('src/') ? 0 : /^(scripts|tests)\//.test(p) ? 1 : p.startsWith('skills/') ? 2 : p.startsWith('docs/') ? 4 : /\.md$/i.test(p) ? 5 : 3;
         const newFiles = changed.files
             .filter(cf => CODE_EXT.test(cf) && !IGNORE_DIR.test(cf) && !files.some(f => f.module.source.some(s => s.path === cf || cf.startsWith(s.path + '/') || s.path.startsWith(cf + '/'))))
             .sort((a, b) => kindRank(a) - kindRank(b) || a.localeCompare(b));
@@ -631,7 +961,7 @@ export function registerTools(ctx, env) {
         const staleModules = files.filter(f => f.module.source.length > 0 && f.module.source.some(s => !existsSync(join(repoRoot, s.path)))).map(f => ({ id: f.module.id, missing: f.module.source.filter(s => !existsSync(join(repoRoot, s.path))).map(s => s.path) }));
         const suggestedModules = newFiles.slice(0, 20).map(cf => {
             const dir = cf.includes('/') ? cf.slice(0, cf.lastIndexOf('/')) : '';
-            let parent = null;
+            let parent: string | null = null;
             for (const f of files)
                 for (const s of f.module.source) {
                     const sdir = s.path.includes('/') ? s.path.slice(0, s.path.lastIndexOf('/')) : '';
@@ -644,18 +974,18 @@ export function registerTools(ctx, env) {
             const stem = cf.slice(cf.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
             const slug = slugify(stem);
             const id = parent !== null ? parent + '.' + slug : slug;
-            const valid = isValidId(id) && splitId(id) !== null && splitId(id).length <= 12;
+            const valid = isValidId(id) && splitId(id) !== null && splitId(id)!.length <= 12;
             return { file: cf, suggested_parent: parent, suggested_id: valid ? id : null, state: 'planned' };
         });
         const plannedRemaining = files.filter(f => f.module.state === 'planned').map(f => f.module.id);
         const activateCandidates = files.filter(f => f.module.state === 'planned' && f.module.source.length > 0 && f.module.source.every(s => existsSync(join(repoRoot, s.path)))).map(f => f.module.id);
-        const apiAdded = [];
-        const apiRemoved = [];
-        const breakingApiRemovals = [];
+        const apiAdded: ApiDiffRow[] = [];
+        const apiRemoved: ApiDiffRow[] = [];
+        const breakingApiRemovals: BreakingApiRow[] = [];
         try {
-            const tree = JSON.parse(await readFile(join(proj.dir, 'tree.json'), 'utf8'));
+            const tree: TreeSnapshot = JSON.parse(await readFile(join(proj.dir, 'tree.json'), 'utf8'));
             const prev = tree.modules ?? {};
-            const refs = new Set();
+            const refs = new Set<string>();
             for (const f of files)
                 for (const d of f.module.deps ?? []) {
                     if (d.from_api !== undefined)
@@ -708,12 +1038,12 @@ export function registerTools(ctx, env) {
             topK: numOpt('返回条数（默认 20）'),
             ...projectParams(true),
         }, ['query']),
-    }, async (args) => {
+    }, async (args: SearchArgs) => {
         const proj = await resolve(args);
         const q = String(args.query).toLowerCase();
         const topK = typeof args.topK === 'number' ? args.topK : 20;
-        const files = (await loadFilesOrThrow(proj.dir));
-        const hits = [];
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
+        const hits: SearchHit[] = [];
         for (const f of files) {
             const m = f.module;
             const hay = (m.id + ' ' + m.name.zh + ' ' + m.name.en + ' ' + m.description.zh + ' ' + m.description.en).toLowerCase();
@@ -737,10 +1067,10 @@ export function registerTools(ctx, env) {
             to: str('目标模块 id'),
             ...projectParams(true),
         }, ['to']),
-    }, async (args) => {
+    }, async (args: DepsFindArgs) => {
         const proj = await resolve(args);
         const target = String(args.to);
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const rows = files.flatMap(f => (f.module.deps ?? [])
             .filter(d => d.to === target || d.to.startsWith(target + '.'))
             .map(d => ({ from: f.module.id, kind: d.kind, to: d.to, from_api: d.from_api ?? null, to_api: d.to_api ?? null })));
@@ -752,7 +1082,7 @@ export function registerTools(ctx, env) {
         parameters: params({
             ...projectParams(true),
         }, []),
-    }, async (args) => {
+    }, async (args: ProjectArgs) => {
         const proj = await resolve(args);
         const b = await buildProject(proj.dir, { requireBilingual: env.requireBilingual });
         if (!b.ok) {
@@ -767,9 +1097,9 @@ export function registerTools(ctx, env) {
             id: str('容器模块 id（有子模块的模块）'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: IdArgs) => {
         const proj = await resolve(args);
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const id = String(args.id);
         const mf = files.find(f => f.module.id === id);
         if (mf === undefined)
@@ -777,7 +1107,7 @@ export function registerTools(ctx, env) {
         const children = files.filter(f => f.module.parent === id).map(f => f.module.id).sort();
         if (children.length === 0)
             return { ok: false, error: { code: 'layout/not-container', message: '叶子模块没有可渲染的子层：' + id } };
-        const { layout, error } = await loadLayoutFile(proj.dir, id);
+        const { layout, error }: { layout: LayoutData | null; error: Diagnostic | null } = await loadLayoutFile(proj.dir, id);
         if (error !== null)
             return { ok: false, errors: [fmtDiag(error)] };
         if (layout === null) {
@@ -803,7 +1133,7 @@ export function registerTools(ctx, env) {
             id: str('容器模块 id'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: IdArgs) => {
         const proj = await resolve(args);
         const id = String(args.id);
         const removed = await deleteLayoutFile(proj.dir, id);
@@ -823,9 +1153,9 @@ export function registerTools(ctx, env) {
             edge_hints: layoutHintParam(),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: LayoutUpsertArgs) => {
         const proj = await resolve(args, true);
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const id = String(args.id);
         const byId = new Map(files.map(f => [f.module.id, f.module]));
         if (!byId.has(id))
@@ -834,7 +1164,7 @@ export function registerTools(ctx, env) {
         if (children.length === 0)
             return { ok: false, error: { code: 'layout/not-container', message: '叶子模块没有可渲染的子层：' + id } };
         const childSet = new Set(children);
-        const siblingEdges = new Set();
+        const siblingEdges = new Set<string>();
         for (const kid of children) {
             const km = byId.get(kid);
             for (const d of km?.deps ?? [])
@@ -842,7 +1172,7 @@ export function registerTools(ctx, env) {
                     siblingEdges.add(edgeKey(kid, d.to));
         }
         // 工具实参是 deepFreeze 的：先浅拷贝再规范化，避免原地改写
-        const data = { schema_version: LAYOUT_SCHEMA_VERSION, id, updated_at: new Date().toISOString() };
+        const data: LayoutData = { schema_version: LAYOUT_SCHEMA_VERSION, id, updated_at: new Date().toISOString() };
         if (args.mode !== undefined)
             data.mode = args.mode;
         if (args.max_columns !== undefined)
@@ -876,7 +1206,7 @@ export function registerTools(ctx, env) {
             out: strOpt('输出文件名（默认 normify.html，写在结构数据目录下）'),
             ...projectParams(true),
         }, []),
-    }, async (args) => {
+    }, async (args: RenderArgs) => {
         const proj = await resolve(args);
         const r = await renderProject(proj.dir, { out: args.out });
         if (!r.ok)
@@ -897,11 +1227,11 @@ export function registerTools(ctx, env) {
             repoRoot: str('仓库根目录（绝对路径）'),
             source: sourceParam(),
         }),
-    }, async (args) => {
+    }, async (args: FingerprintArgs) => {
         const repoRoot = String(args.repoRoot);
         const sources = Array.isArray(args.source) ? args.source : [];
         // source 白名单：拒绝 ../、绝对路径、反斜杠与非法行号（P0-02 / 审计 A8）
-        const sourceDiags = [];
+        const sourceDiags: Diagnostic[] = [];
         for (let i = 0; i < sources.length; i++)
             checkSourceEntry(sources[i], 'source/' + i, sourceDiags);
         if (sourceDiags.length > 0) {
@@ -926,12 +1256,12 @@ export function registerTools(ctx, env) {
             depth: numOpt('影响面深度 1..4（默认 2）'),
             ...projectParams(true),
         }),
-    }, async (args) => {
+    }, async (args: BriefArgs) => {
         const proj = await resolve(args);
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const byId = new Map(files.map(f => [f.module.id, f.module]));
         const fileOf = new Map(files.map(f => [f.module.id, f.file]));
-        const childrenOf = new Map();
+        const childrenOf = new Map<string, string[]>();
         for (const f of files)
             if (f.module.parent !== null) {
                 const list = childrenOf.get(f.module.parent) ?? [];
@@ -941,15 +1271,15 @@ export function registerTools(ctx, env) {
         const layoutIds = new Set((await listLayoutFiles(proj.dir)).map(rel => rel.replace(/\.json$/, '').replace(/\//g, '.')));
         const policyLoad = await loadPolicyFile(proj.dir);
         const policy = policyLoad.policy;
-        const depsIn = new Map();
+        const depsIn = new Map<string, { from: string; kind: string }[]>();
         for (const f of files)
             for (const d of f.module.deps ?? []) {
                 const list = depsIn.get(d.to) ?? [];
                 list.push({ from: f.module.id, kind: d.kind });
                 depsIn.set(d.to, list);
             }
-        const candidates = new Set();
-        const unmatchedFiles = [];
+        const candidates = new Set<string>();
+        const unmatchedFiles: string[] = [];
         if (typeof args.id === 'string' && args.id.trim() !== '') {
             const id = args.id.trim();
             if (!byId.has(id))
@@ -986,11 +1316,11 @@ export function registerTools(ctx, env) {
                 candidates.add(s.id);
         }
         const depth = typeof args.depth === 'number' ? Math.max(1, Math.min(4, Math.round(args.depth))) : 2;
-        const impact = { direct: [], transitive: [], cross_tree: [] };
+        const impact: ImpactSummary = { direct: [], transitive: [], cross_tree: [] };
         const visited = new Set([...candidates]);
         let frontier = [...candidates];
         for (let d = 1; d <= depth; d++) {
-            const next = [];
+            const next: string[] = [];
             for (const id of frontier) {
                 for (const ref of depsIn.get(id) ?? []) {
                     if (visited.has(ref.from))
@@ -1000,7 +1330,7 @@ export function registerTools(ctx, env) {
                         impact.direct.push(ref.from);
                     else
                         impact.transitive.push(ref.from);
-                    const tree = (candidate) => candidate.split('.')[0];
+                    const tree = (candidate: string): string => candidate.split('.')[0];
                     for (const c of candidates)
                         if (tree(c) !== tree(ref.from))
                             impact.cross_tree.push(ref.from + ' ← ' + c);
@@ -1010,7 +1340,7 @@ export function registerTools(ctx, env) {
             frontier = next;
         }
         const targets = [...candidates].map(id => {
-            const m = byId.get(id);
+            const m = byId.get(id)!;
             return {
                 id,
                 state: m.state ?? 'active',
@@ -1031,10 +1361,10 @@ export function registerTools(ctx, env) {
             const s = (d.subject ?? {});
             return candidates.has(String(s.module ?? '')) || candidates.has(String(s.to ?? ''));
         });
-        const suggestions = [];
+        const suggestions: ModuleSuggestion[] = [];
         for (const p of unmatchedFiles.slice(0, 20)) {
             const dir = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
-            let parent = null;
+            let parent: string | null = null;
             for (const f of files) {
                 for (const s of f.module.source) {
                     const sdir = s.path.includes('/') ? s.path.slice(0, s.path.lastIndexOf('/')) : '';
@@ -1049,7 +1379,7 @@ export function registerTools(ctx, env) {
             const stem = p.slice(p.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
             const slug = slugify(stem);
             const id = parent !== null ? parent + '.' + slug : slug;
-            const valid = isValidId(id) && splitId(id) !== null && splitId(id).length <= 12;
+            const valid = isValidId(id) && splitId(id) !== null && splitId(id)!.length <= 12;
             suggestions.push({
                 file: p,
                 suggested_parent: parent,
@@ -1058,7 +1388,7 @@ export function registerTools(ctx, env) {
                 note: valid ? '先用 normify_check 预检，再用 normify_module_batch/upsert 建计划态模块（source 指向该文件，fingerprint=pending）' : '自动建议的 id 非法或超深，请人工命名',
             });
         }
-        const checklist = [];
+        const checklist: string[] = [];
         if (targets.some(t => t.state === 'planned'))
             checklist.push('计划态模块：实现 source 指向的文件后调用 normify_module_refresh({ ids: [...], activate: true, repoRoot })');
         if (targets.some(t => t.children.length >= 2 && !t.has_layout))
@@ -1067,7 +1397,7 @@ export function registerTools(ctx, env) {
             checklist.push('存在架构规则违规：先按 supportedFixes 修正，或经评审调整 policy.yml');
         checklist.push('收尾（0 error 强制）：normify_validate（带 repoRoot）→ normify_build → normify_render');
         checklist.push('建议留痕：normify_change_open → 实现 → normify_change_close');
-        const allChanges = [];
+        const allChanges: ChangeSummaryRow[] = [];
         for (const cid of await listChangeIds(proj.dir)) {
             const c = await loadChangeFile(proj.dir, cid);
             if (c.change !== null)
@@ -1106,7 +1436,7 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅校验并返回将写入的文件，不落盘'),
             ...projectParams(true),
         }, ['id', 'patch']),
-    }, async (args) => {
+    }, async (args: ModulePatchArgs) => {
         const proj = await resolve(args);
         const r = await patchModule(proj.dir, String(args.id), {
             ...args.patch,
@@ -1133,13 +1463,13 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅校验并返回将写的文件，不落盘'),
             ...projectParams(true),
         }, ['items']),
-    }, async (args) => {
+    }, async (args: ModuleBatchArgs) => {
         const proj = await resolve(args, true);
         const mode = args.mode === 'patch' ? 'patch' : 'upsert';
         const items = args.items.map(i => ({ ...i }));
         const r = await batchWrite(proj.dir, items, mode, { dryRun: args.dry_run === true });
         if (!r.ok) {
-            const dropped = (r.detail?.dropped_by_l1 ?? []);
+            const dropped = (r.detail?.dropped_by_l1 ?? []) as { module: string; code: string; message: string }[];
             return {
                 ok: false,
                 dry_run: r.dryRun,
@@ -1174,7 +1504,7 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅返回迁移计划（模块/依赖/渲染数据），不落盘'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: ModuleMoveArgs) => {
         const proj = await resolve(args);
         if (typeof args.new_id !== 'string' && typeof args.new_parent !== 'string') {
             return { ok: false, error: { code: 'module/move-noop', message: '必须提供 new_id 或 new_parent' } };
@@ -1208,7 +1538,7 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅计算并返回结果，不写磁盘'),
             ...projectParams(true),
         }, ['repoRoot']),
-    }, async (args) => {
+    }, async (args: ModuleRefreshArgs) => {
         const proj = await resolve(args);
         const ids = Array.isArray(args.ids) ? args.ids.map(String) : undefined;
         if ((ids === undefined || ids.length === 0) && args.all !== true) {
@@ -1246,7 +1576,7 @@ export function registerTools(ctx, env) {
             note: strOpt('备注（可选）'),
             ...projectParams(true),
         }, ['title', 'intent', 'modules', 'acceptance']),
-    }, async (args) => {
+    }, async (args: ChangeOpenArgs) => {
         // 0.5.3：change_open 是写工具，首次使用时应自动创建结构数据目录与默认架构规则，
         // 而不是甩一个 project/no-modules（实测中 AI 只能用 module_batch{items:[],dry_run:true} 绕过去）。
         const proj = await resolve(args, true);
@@ -1260,7 +1590,7 @@ export function registerTools(ctx, env) {
         const exists = await loadChangeFile(proj.dir, id);
         if (exists.change !== null)
             return { ok: false, error: { code: 'change/exists', message: '变更已存在：' + id } };
-        const files = (await loadFilesOrThrow(proj.dir));
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const byId = new Set(files.map(f => f.module.id));
         const modules = { ...args.modules };
         const refs = [
@@ -1303,7 +1633,7 @@ export function registerTools(ctx, env) {
             patch: freeObjectParam('要更新的字段（title/intent/status/acceptance/modules/note 等）', true),
             ...projectParams(true),
         }, ['id', 'patch']),
-    }, async (args) => {
+    }, async (args: ChangeUpdateArgs) => {
         const proj = await resolve(args);
         const { change, error } = await loadChangeFile(proj.dir, String(args.id));
         if (error !== null)
@@ -1316,7 +1646,7 @@ export function registerTools(ctx, env) {
         delete patch.id;
         delete patch.created_at;
         delete patch.schema_version;
-        const merged = { ...change, ...patch, updated_at: new Date().toISOString() };
+        const merged = { ...change, ...patch, updated_at: new Date().toISOString() } as unknown as ChangeData;
         // 维护 delete_snapshot：删除目标在写入前仍存在则记为快照；已不存在的沿用旧快照（P0-04 / issue #9）
         if (merged.modules !== undefined && typeof merged.modules === 'object') {
             const live = new Set((await loadFilesOrThrow(proj.dir)).map(f => f.module.id));
@@ -1343,7 +1673,7 @@ export function registerTools(ctx, env) {
             status: strOpt('按状态过滤：proposed | in_progress | verified | abandoned'),
             ...projectParams(true),
         }),
-    }, async (args) => {
+    }, async (args: ChangeListArgs) => {
         const proj = await resolve(args);
         if (typeof args.id === 'string' && args.id.trim() !== '') {
             const { change, error } = await loadChangeFile(proj.dir, args.id.trim());
@@ -1353,8 +1683,8 @@ export function registerTools(ctx, env) {
                 return { ok: false, error: { code: 'change/not-found', message: '变更不存在：' + args.id } };
             return { ok: true, change, file: 'changes/' + change.id + '.json' };
         }
-        const out = [];
-        const loadErrors = [];
+        const out: ChangeListRow[] = [];
+        const loadErrors: Diagnostic[] = [];
         for (const id of await listChangeIds(proj.dir)) {
             const { change, error } = await loadChangeFile(proj.dir, id);
             if (error !== null) {
@@ -1379,7 +1709,7 @@ export function registerTools(ctx, env) {
         if (loadErrors.length > 0) {
             return { ok: false, count: out.length, changes: out, errors: loadErrors.map(fmtDiag), hint: '有变更文件无法解析：先修复这些 JSON，再重试列表（不会静默跳过）' };
         }
-        const counts = { proposed: 0, in_progress: 0, verified: 0, abandoned: 0 };
+        const counts: Record<string, number> = { proposed: 0, in_progress: 0, verified: 0, abandoned: 0 };
         for (const c of out)
             counts[String(c.status)] = (counts[String(c.status)] ?? 0) + 1;
         return { ok: true, count: out.length, counts, changes: out };
@@ -1395,7 +1725,7 @@ export function registerTools(ctx, env) {
             note: strOpt('关闭备注（可选）'),
             ...projectParams(true),
         }, ['id']),
-    }, async (args) => {
+    }, async (args: ChangeCloseArgs) => {
         const proj = await resolve(args);
         const r = await closeChange(proj.dir, String(args.id), {
             repoRoot: typeof args.repoRoot === 'string' ? args.repoRoot : undefined,
@@ -1425,12 +1755,12 @@ export function registerTools(ctx, env) {
         parameters: params({
             ...projectParams(true),
         }),
-    }, async (args) => {
+    }, async (args: ProjectArgs) => {
         const proj = await resolve(args);
         const r = await loadPolicyFile(proj.dir);
         if (r.errors.length > 0)
             return { ok: false, errors: r.errors.map(fmtDiag) };
-        const out = {
+        const out: PolicyGetOutput = {
             ok: true,
             file: 'policy.yml',
             exists: r.exists,
@@ -1450,7 +1780,7 @@ export function registerTools(ctx, env) {
             dry_run: boolOpt('仅校验并返回规则数，不写磁盘'),
             ...projectParams(true),
         }, ['rules']),
-    }, async (args) => {
+    }, async (args: PolicyUpsertArgs) => {
         const proj = await resolve(args, true);
         const data = { schema_version: POLICY_SCHEMA_VERSION, updated_at: new Date().toISOString(), rules: args.rules };
         const r = l1ValidatePolicy(data, 'tool:policy_upsert');
@@ -1469,7 +1799,7 @@ export function registerTools(ctx, env) {
             deps: objArrayParam('拟新增依赖 [{ from, to, kind?, to_api? }]'),
             ...projectParams(true),
         }),
-    }, async (args) => {
+    }, async (args: CheckArgs) => {
         const proj = await resolve(args);
         const modules = Array.isArray(args.modules) ? args.modules.map(m => ({ ...m })) : undefined;
         const deps = Array.isArray(args.deps) ? args.deps.map(d => ({ ...d })) : undefined;
@@ -1488,7 +1818,7 @@ export function registerTools(ctx, env) {
         parameters: params({
             topic: strOpt('主题：' + HELP_TOPICS.join(' | ') + ' | tool:<工具名>（默认 fields）'),
         }),
-    }, async (args) => {
+    }, async (args: HelpArgs) => {
         const raw = typeof args.topic === 'string' ? args.topic.trim() : '';
         const lower = raw.toLowerCase();
         // 0.5.4：支持 tool:<工具名> —— 打印该工具的完整参数树（必填/可选/类型/描述）
@@ -1501,7 +1831,7 @@ export function registerTools(ctx, env) {
             const ref = toolReference(hit);
             return { ok: true, topic: 'tool:' + hit.name, title: ref.title, reference: ref.text, topics: [...HELP_TOPICS, 'tool:<name>'] };
         }
-        const topic = (lower === '' ? 'fields' : lower);
+        const topic = (lower === '' ? 'fields' : lower) as HelpTopic;
         if (!HELP_TOPICS.includes(topic)) {
             return {
                 ok: false,
@@ -1515,4 +1845,3 @@ export function registerTools(ctx, env) {
         return { ok: true, topic, title: ref.title, reference: ref.text, topics: [...HELP_TOPICS, 'tool:<name>'] };
     });
 }
-//# sourceMappingURL=tools.js.map
