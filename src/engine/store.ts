@@ -1,6 +1,6 @@
 import type { Diagnostic, Module, ModuleFile, SourceRef } from './types.js';
 import type { Dirent } from 'node:fs';
-import { readdir, readFile, writeFile, rename, rm, mkdir } from 'node:fs/promises';
+import { readdir, readFile, rename, rm, mkdir, realpath } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, relative, sep } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -10,6 +10,7 @@ import { parseModuleText, serializeModule } from './frontmatter.js';
 import { deleteLayoutFile } from './layout.js';
 import { installDefaultPolicy } from './policy.js';
 import { diag } from './diag.js';
+import { isInside, writeFileAtomic } from './atomic.js';
 export const PROJECT_PREFIX = 'normify-';
 export class NormifyError extends Error {
     code: string;
@@ -167,7 +168,7 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
         promoted.push(module.id);
     }
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, serializeModule(module, body), 'utf8');
+    await writeFileAtomic(target, serializeModule(module, body));
     const parentId = deriveParent(module.id);
     if (parentId !== null) {
         const parentLeaf = moduleFilePath(projectDir, parentId, false);
@@ -181,7 +182,7 @@ export async function writeModuleFile(projectDir: string, module: Module, body: 
                 await rename(parentLeaf, parentContainer);
             }
             else {
-                await writeFile(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''), 'utf8');
+                await writeFileAtomic(parentContainer, serializeModule(stripped.module, parentFile.body ?? ''));
                 await rm(parentLeaf, { force: true });
                 warnings.push(apiDropWarning(parentId, relative(projectDir, parentContainer).replace(/\\/g, '/'), stripped.dropped));
             }
@@ -280,7 +281,7 @@ export async function promoteModule(projectDir: string, id: string): Promise<{ f
         return { file: rel, warnings };
     }
     // 容器不允许声明 API：晋升时摘下并回报丢失清单（否则 L2 立刻 api/non-leaf）
-    await writeFile(container, serializeModule(stripped.module, file.body ?? ''), 'utf8');
+    await writeFileAtomic(container, serializeModule(stripped.module, file.body ?? ''));
     await rm(leaf, { force: true });
     warnings.push(apiDropWarning(id, rel, stripped.dropped));
     return { file: rel, warnings };
@@ -297,10 +298,27 @@ export function gitHead(repoRoot: string): { sha: string | null; error: string |
         return { sha: null, error: 'git HEAD 不是 40 位 SHA：' + sha };
     return { sha, error: null };
 }
+/**
+ * 校验 git diff 范围参数：只允许 revision/range 文法，禁止以 `-` 开头（防选项注入）、
+ * 禁止空白/NUL/引号等控制字符。任何不合法输入都不进入子进程。
+ */
+const GIT_SPEC = /^[A-Za-z0-9._/@{}^~:+-]+(?:\.\.\.?[A-Za-z0-9._/@{}^~:+-]+)?$/;
+export function isValidDiffSpec(spec: string): boolean {
+    if (spec.length === 0 || spec.length > 512)
+        return false;
+    if (spec.startsWith('-'))
+        return false;
+    if (spec.includes('--'))
+        return false;
+    return GIT_SPEC.test(spec);
+}
 /** git 变更文件清单（增量再生成的输入）。 */
 export function gitChangedFiles(repoRoot: string, diffSpec: string): { files: string[] | null; error: string | null } {
     const spec = diffSpec.trim() === '' ? 'HEAD' : diffSpec.trim();
-    const result = spawnSync('git', ['-C', repoRoot, 'diff', '--name-only', spec], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    if (!isValidDiffSpec(spec)) {
+        return { files: null, error: '非法的 git diff 范围：' + JSON.stringify(diffSpec) + '（只接受 revision 或 A..B / A...B 形式，且不能以 - 开头）' };
+    }
+    const result = spawnSync('git', ['-C', repoRoot, 'diff', '--name-only', '--no-color', '--no-ext-diff', spec, '--'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     if (result.error !== undefined) {
         return { files: null, error: 'git 不可用：' + result.error.message };
     }
@@ -309,7 +327,7 @@ export function gitChangedFiles(repoRoot: string, diffSpec: string): { files: st
     }
     const changed = String(result.stdout).split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
     // 新增但未 add 的文件（AI 开发中最常见的“新文件”形态）也纳入同步建议
-    const untracked = spawnSync('git', ['-C', repoRoot, 'ls-files', '--others', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    const untracked = spawnSync('git', ['-C', repoRoot, 'ls-files', '--others', '--exclude-standard', '--'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     if (untracked.error === undefined && untracked.status === 0) {
         for (const f of String(untracked.stdout).split(/\r?\n/).map(s => s.trim())) {
             if (f.length > 0 && !changed.includes(f))
@@ -318,14 +336,40 @@ export function gitChangedFiles(repoRoot: string, diffSpec: string): { files: st
     }
     return { files: changed, error: null };
 }
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。 */
+/** 仓库内相对路径是否安全（无绝对/反斜杠/空段/..），用于 fingerprint 的 source 白名单。 */
+export function isSafeRepoRelative(p: string): boolean {
+    if (typeof p !== 'string' || p.length === 0 || p.length > 240)
+        return false;
+    if (p.startsWith('/') || /^[A-Za-z]:/.test(p) || p.includes('\\'))
+        return false;
+    const segs = p.split('/');
+    return !segs.some(s => s === '' || s === '.' || s === '..');
+}
+/** fingerprint 单文件最大读取量（防御超大文件/设备文件拖垮校验）。 */
+const FINGERPRINT_MAX_BYTES = 8 * 1024 * 1024;
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。越界/不安全路径按缺失处理并在 missing 中列出。 */
 export async function fingerprintOf(repoRoot: string, sources: SourceRef[]): Promise<{ hash: string | null; missing: string[] }> {
     const paths = [...new Set(sources.map(s => s.path))].sort();
     const missing: string[] = [];
+    const rootAbs = resolve(repoRoot);
     const hash = createHash('sha256');
     for (const p of paths) {
+        if (!isSafeRepoRelative(p)) {
+            missing.push(p);
+            continue;
+        }
+        const abs = join(rootAbs, p);
         try {
-            const buf = await readFile(join(repoRoot, p));
+            const real = await realpath(abs);
+            if (!isInside(rootAbs, real)) {
+                missing.push(p);
+                continue;
+            }
+            const buf = await readFile(real);
+            if (buf.byteLength > FINGERPRINT_MAX_BYTES) {
+                missing.push(p);
+                continue;
+            }
             hash.update(p);
             hash.update('\0');
             hash.update(buf);

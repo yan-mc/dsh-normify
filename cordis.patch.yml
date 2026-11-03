@@ -1,7 +1,7 @@
-# dsh-normify bundle 层（dsh 0.1.5+ / DSHEAC AIO 桌面端插件包契约）。
-# 插件行本身很薄：真正的 30 个 normify_* 工具与 normify-gen 运行时技能
+# dsh-normify bundle 层（DeepSeek Harness 0.2.x 插件包契约；只支持当前最新 DSH）。
+# 插件行本身很薄：真正的 31 个 normify_* 工具与 normify-gen 运行时技能
 # 都在 lib/index.js 的 apply() 内注册（ctx.tools.register / ctx.skills.register）。
-# 可选配置：rootDir（默认 "."）/ requireBilingual（默认 true）。
+# 可选配置：rootDir（默认 "."）/ requireBilingual（默认 true）/ devCompanionReminder（默认 false）。
 - insert:
     - id: dsh-normify
       name: '@dsh-external/dsh-normify'

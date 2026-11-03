@@ -1,9 +1,18 @@
-/** Normify 查看器模板：单文件自包含 HTML（内联 CSS/JS，无外部依赖）。 */
+/** 单文件自包含 HTML（内联 CSS/JS，无外部依赖）。 */
 export interface RenderSummary {
     name: string;
     stats: Record<string, unknown>;
     compiledAt: string;
     treeSha12: string;
+}
+/** 所有进入 HTML 文本节点的插值都要转义（title 曾经是漏网之鱼，P0-05）。 */
+function escapeHtml(value: string): string {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 export function renderTemplate(dataJson: string, summary: RenderSummary): string {
     // script 标签内的 JSON 必须转义 < 防止提前闭合
@@ -14,7 +23,8 @@ export function renderTemplate(dataJson: string, summary: RenderSummary): string
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="normify">
-<title>${summary.name} · Normify</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>${escapeHtml(summary.name)} · Normify</title>
 <style>
 :root {
   --bg: #0b1220; --panel: #111a2c; --panel2: #16223a; --border: #24344f;
@@ -325,7 +335,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px
   }
 
   function wrapName(name, maxW, fs) {
-    var s = String(name).replace(/s+/g, ' ')
+    var s = String(name).replace(/\\s+/g, ' ')
     var words = s.split(' ')
     var lines = []
     if (words.length > 1) {

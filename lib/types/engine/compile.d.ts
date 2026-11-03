@@ -5,6 +5,8 @@ export interface BuildOptions extends ValidateOptions {
 export interface BuildOutput {
     ok: boolean;
     receipt: Record<string, unknown> | null;
+    /** receipt.json 自身的 SHA-256（写入 receipt.sha256 sidecar；receipt 内部不含自身哈希，见 P0-03）。 */
+    receiptSha256: string | null;
     errors: Diagnostic[];
     warnings: Diagnostic[];
     validate: ValidateOutput | null;

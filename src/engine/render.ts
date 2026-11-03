@@ -1,6 +1,7 @@
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { sha256Text } from './store.js';
+import { safeOutName, writeFileAtomic } from './atomic.js';
 import { renderTemplate } from './template.js';
 import { diag } from './diag.js';
 import type { Diagnostic } from './types.js';
@@ -71,9 +72,24 @@ export async function renderProject(projectDir: string, opts: RenderOptions): Pr
         theme: opts.theme ?? '',
     };
     const html = renderTemplate(treeText, { name, stats, compiledAt: summary.compiledAt, treeSha12: summary.treeSha12 });
-    const out = join(projectDir, opts.out && opts.out.trim() !== '' ? opts.out : 'normify.html');
+    let out: string;
     try {
-        await writeFile(out, html, 'utf8');
+        // 只允许纯文件名：out 是模型可控参数，绝不能拼出项目目录之外（P0-02）
+        out = join(projectDir, safeOutName(opts.out));
+    }
+    catch (error) {
+        return {
+            ok: false,
+            htmlPath: null,
+            bytes: 0,
+            sha256: null,
+            summary,
+            errors: [diag('error', 'render/invalid-out', '输出文件名不合法：' + String(error instanceof Error ? error.message : error), { out: opts.out }, {}, ['out 只接受纯文件名（如 normify.html），不支持路径'])],
+            warnings,
+        };
+    }
+    try {
+        await writeFileAtomic(out, html);
     }
     catch (error) {
         return {

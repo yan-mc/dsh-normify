@@ -3,9 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEP_KINDS, PROTOCOLS } from './engine/types.js';
-import { l1Validate } from './engine/frontmatter.js';
+import { l1Validate, checkSourceEntry } from './engine/frontmatter.js';
 import { apiKey, isValidId, slugify, splitId } from './engine/ids.js';
-import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from './engine/store.js';
+import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, isValidDiffSpec, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from './engine/store.js';
 import { LAYOUT_SCHEMA_VERSION, deleteLayoutFile, edgeKey, l1ValidateLayout, layoutRelPath, listLayoutFiles, loadLayoutFile, writeLayoutFile } from './engine/layout.js';
 import { batchWrite, checkProposal, moveModuleTree, patchModule, previewModuleFile, refreshModules } from './engine/edit.js';
 import { POLICY_SCHEMA_VERSION, defaultPolicyTemplate, evaluatePolicy, l1ValidatePolicy, loadPolicyFile, policyReference, writePolicyFile } from './engine/policy.js';
@@ -19,7 +19,7 @@ import { HELP_TOPICS, toolReference, topicReference } from './engine/reference.j
 
 import type { Context } from '@deepseek-ai/cordis';
 import type { HelpTopic, ToolCatalogEntry } from './engine/reference.js';
-import type { ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, Module, ModuleFile, ModuleState, PolicyData, PolicyRule, SourceRef } from './engine/types.js';
+import type { ChangeData, ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, Module, ModuleFile, ModuleState, PolicyData, PolicyRule, SourceRef } from './engine/types.js';
 
 export interface ToolEnv {
     rootDir: string;
@@ -624,6 +624,19 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         });
     };
     const resolve = (args: ProjectArgs, create = false): Promise<ProjectRef> => resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create });
+    /**
+     * 读取项目全部模块；只要存在无法解析/校验的模块文件就抛错。
+     * 0.5.4 及以前各处只取 `.files`，会静默吞掉坏文件（读到的模块数变少但 ok:true，P0-04 / 审计 A6）。
+     */
+    const loadFilesOrThrow = async (projectDir: string): Promise<ModuleFile[]> => {
+        const loaded = await loadAllModules(projectDir);
+        if (loaded.errors.length > 0) {
+            const preview = loaded.errors.slice(0, 3).map(d => '[' + d.code + '] ' + d.message).join('；');
+            const more = loaded.errors.length > 3 ? '（另有 ' + (loaded.errors.length - 3) + ' 条，完整清单见 normify_validate）' : '';
+            throw new NormifyError('input/invalid-modules', '项目内有 ' + loaded.errors.length + ' 个模块文件无法解析/校验：' + preview + more + '。读/写工具不会静默跳过坏文件；请先修复或运行 normify_validate 查看全部诊断。');
+        }
+        return loaded.files;
+    };
     register('normify_tree_list', {
         description: '列出全部结构数据项目（normify-* 目录，含每棵树的根与仓库）。',
         behavior: 'read',
@@ -635,7 +648,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         const projects: ProjectRef[] = listProjects(rootDir);
         const out: TreeListRow[] = [];
         for (const p of projects) {
-            const roots: ModuleFile[] = (await loadAllModules(p.dir)).files.filter(f => f.module.parent === null);
+            const roots: ModuleFile[] = (await loadFilesOrThrow(p.dir)).filter(f => f.module.parent === null);
             out.push({
                 slug: p.slug,
                 dir: p.dir,
@@ -653,7 +666,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }, ['id']),
     }, async (args: IdArgs) => {
         const proj = await resolve(args);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const mf = files.find(f => f.module.id === args.id || f.module.uid === args.id);
         if (mf === undefined)
             return { ok: false, error: { code: 'module/not-found', message: '模块不存在：' + String(args.id) } };
@@ -670,7 +683,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }, []),
     }, async (args: ModuleListArgs) => {
         const proj = await resolve(args);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const kids = new Map<string, string[]>();
         for (const f of files) {
             if (f.module.parent === null)
@@ -709,7 +722,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }),
     }, async (args: ProjectInitArgs) => {
         const proj = await resolve(args, true);
-        const before: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const before: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const policy = await loadPolicyFile(proj.dir);
         const ruleCount = policy.policy?.rules?.length ?? 0;
         let rootId: string | null = null;
@@ -783,12 +796,23 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         if (module === null) {
             return { ok: false, errors: errors.map(fmtDiag), warnings: warnings.map(fmtDiag), summary: errors.length + ' error（未写入）' };
         }
-        const existing: ModuleFile | undefined = (await loadAllModules(proj.dir)).files.find(f => f.module.id === module.id);
+        const existingFiles = await loadFilesOrThrow(proj.dir);
+        const existing: ModuleFile | undefined = existingFiles.find(f => f.module.id === module.id);
+        // 单模块 upsert 的结构预检（batch 已有同类预检）：parent 必须已存在，否则会写出孤儿模块。
+        if (module.parent !== null && !existingFiles.some(f => f.module.id === module.parent)) {
+            return {
+                ok: false,
+                error: {
+                    code: 'structure/parent-not-exist',
+                    message: 'parent 不存在：' + module.parent + '。单模块 upsert 不会自动创建父模块；先写父模块，或改用 normify_module_batch 原子建树。',
+                },
+            };
+        }
         if (typeof args.expect_updated_at === 'string' && existing !== undefined && existing.module.updated_at !== args.expect_updated_at) {
             return { ok: false, error: { code: 'module/conflict', message: '模块已被其他写入修改（updated_at 不一致），请先重新读取：' + module.id } };
         }
         if (args.dry_run === true) {
-            const all: Module[] = (await loadAllModules(proj.dir)).files.map(f => f.module);
+            const all: Module[] = existingFiles.map(f => f.module);
             return {
                 ok: true,
                 dry_run: true,
@@ -819,7 +843,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         const proj = await resolve(args);
         const id = String(args.id);
         // 悬空边预警：全项目扫描指向该子树任何模块的箭头
-        const before: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const before: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const affected = new Set([id]);
         let grew = true;
         while (grew) {
@@ -885,25 +909,28 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         if (!b.ok) {
             return { ok: false, errors: b.errors.map(fmtDiag), warnings: b.warnings.map(fmtDiag), summary: b.errors.length + ' error（未产出任何产物）' };
         }
-        return { ok: true, receipt: b.receipt, warnings: b.warnings.map(fmtDiag), hint: '编译成功。可运行 normify_render 生成交互式 HTML。' };
+        return { ok: true, receipt: b.receipt, receipt_sha256: b.receiptSha256, artifacts: { receipt: 'receipt.json', receipt_hash: 'receipt.sha256' }, warnings: b.warnings.map(fmtDiag), hint: '编译成功。产物含 tree.json/outline.md/api-index.json/receipt.json；receipt 自身哈希在 receipt.sha256。可运行 normify_render 生成交互式 HTML。' };
     });
     register('normify_sync', {
         description: '增量再生成计划器 v2（只读）：git diff → 脏子树 / 新增文件建议 / 失效模块 / API 增删与破坏性变更 / planned 进度，供 AI 按清单局部重建。',
         behavior: 'read',
         parameters: params({
             repoRoot: str('仓库根目录'),
-            diff: strOpt('git diff 范围（默认 HEAD）'),
+            diff: strOpt('git diff 范围（默认 HEAD；只接受 revision 或 A..B/A...B，禁止以 - 开头）'),
             ...projectParams(true),
         }, ['repoRoot']),
     }, async (args: SyncArgs) => {
         const proj = await resolve(args);
         const repoRoot = String(args.repoRoot);
         const diff = args.diff;
+        if (typeof diff === 'string' && diff.trim() !== '' && !isValidDiffSpec(diff.trim())) {
+            return { ok: false, error: { code: 'args/invalid-diff', message: 'diff 参数非法：' + JSON.stringify(diff) + '（只接受 revision 或 A..B/A...B 形式，且不能以 - 开头；git 选项注入已禁止）' } };
+        }
         const changed = gitChangedFiles(repoRoot, diff ?? '');
         if (changed.files === null) {
             return { ok: false, error: { code: 'sync/git-failed', message: changed.error ?? 'git 不可用' } };
         }
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const affected = files.filter(f => f.module.source.some(s => changed.files!.some(cf => cf === s.path || cf.startsWith(s.path + '/'))));
         const affectedSet = new Set(affected.map(f => f.module.id));
         const toReview = new Set<string>();
@@ -1015,7 +1042,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         const proj = await resolve(args);
         const q = String(args.query).toLowerCase();
         const topK = typeof args.topK === 'number' ? args.topK : 20;
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const hits: SearchHit[] = [];
         for (const f of files) {
             const m = f.module;
@@ -1043,7 +1070,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
     }, async (args: DepsFindArgs) => {
         const proj = await resolve(args);
         const target = String(args.to);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const rows = files.flatMap(f => (f.module.deps ?? [])
             .filter(d => d.to === target || d.to.startsWith(target + '.'))
             .map(d => ({ from: f.module.id, kind: d.kind, to: d.to, from_api: d.from_api ?? null, to_api: d.to_api ?? null })));
@@ -1072,7 +1099,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }, ['id']),
     }, async (args: IdArgs) => {
         const proj = await resolve(args);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const id = String(args.id);
         const mf = files.find(f => f.module.id === id);
         if (mf === undefined)
@@ -1128,7 +1155,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }, ['id']),
     }, async (args: LayoutUpsertArgs) => {
         const proj = await resolve(args, true);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const id = String(args.id);
         const byId = new Map(files.map(f => [f.module.id, f.module]));
         if (!byId.has(id))
@@ -1203,6 +1230,13 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
     }, async (args: FingerprintArgs) => {
         const repoRoot = String(args.repoRoot);
         const sources = Array.isArray(args.source) ? args.source : [];
+        // source 白名单：拒绝 ../、绝对路径、反斜杠与非法行号（P0-02 / 审计 A8）
+        const sourceDiags: Diagnostic[] = [];
+        for (let i = 0; i < sources.length; i++)
+            checkSourceEntry(sources[i], 'source/' + i, sourceDiags);
+        if (sourceDiags.length > 0) {
+            return { ok: false, errors: sourceDiags.map(fmtDiag), fingerprint: null, files: sources.map(s => s.path), missing: [], hint: 'source 只接受仓库内 POSIX 相对路径（无 ..、无绝对路径、无反斜杠），行号须为正整数' };
+        }
         const fp = await fingerprintOf(repoRoot, sources);
         return {
             ok: fp.missing.length === 0,
@@ -1224,7 +1258,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         }),
     }, async (args: BriefArgs) => {
         const proj = await resolve(args);
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const byId = new Map(files.map(f => [f.module.id, f.module]));
         const fileOf = new Map(files.map(f => [f.module.id, f.file]));
         const childrenOf = new Map<string, string[]>();
@@ -1556,7 +1590,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         const exists = await loadChangeFile(proj.dir, id);
         if (exists.change !== null)
             return { ok: false, error: { code: 'change/exists', message: '变更已存在：' + id } };
-        const files: ModuleFile[] = (await loadAllModules(proj.dir)).files;
+        const files: ModuleFile[] = (await loadFilesOrThrow(proj.dir));
         const byId = new Set(files.map(f => f.module.id));
         const modules = { ...args.modules };
         const refs = [
@@ -1569,6 +1603,8 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             return { ok: false, error: { code: 'change/module-missing', message: '变更引用的模块不存在：' + missing.join(', ') + '（计划态模块也可以先建）' } };
         }
         const now = new Date().toISOString();
+        // 记录删除目标快照：删除完成后这些 id 不再存在，但变更仍需能通过 L2 并关闭（P0-04 / issue #9）
+        const deleteSnapshot = (modules.delete ?? []).filter(ref => byId.has(ref));
         const data = {
             schema_version: CHANGE_SCHEMA_VERSION,
             id,
@@ -1576,6 +1612,7 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             status: args.status === 'proposed' ? 'proposed' : 'in_progress',
             intent,
             modules,
+            ...(deleteSnapshot.length > 0 ? { delete_snapshot: deleteSnapshot } : {}),
             acceptance: Array.isArray(args.acceptance) ? [...args.acceptance] : [],
             ...(typeof args.note === 'string' ? { note: args.note } : {}),
             revision: { before: null, after: null },
@@ -1609,7 +1646,17 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
         delete patch.id;
         delete patch.created_at;
         delete patch.schema_version;
-        const merged = { ...change, ...patch, updated_at: new Date().toISOString() };
+        const merged = { ...change, ...patch, updated_at: new Date().toISOString() } as unknown as ChangeData;
+        // 维护 delete_snapshot：删除目标在写入前仍存在则记为快照；已不存在的沿用旧快照（P0-04 / issue #9）
+        if (merged.modules !== undefined && typeof merged.modules === 'object') {
+            const live = new Set((await loadFilesOrThrow(proj.dir)).map(f => f.module.id));
+            const prev = new Set(change.delete_snapshot ?? []);
+            const snapshot = (merged.modules.delete ?? []).filter(id => live.has(id) || prev.has(id));
+            if (snapshot.length > 0)
+                merged.delete_snapshot = snapshot;
+            else
+                delete merged.delete_snapshot;
+        }
         if (merged.status === 'abandoned' && merged.closed_at === undefined)
             merged.closed_at = new Date().toISOString();
         const r = l1ValidateChange(merged, change.id, 'tool:change_update');
@@ -1637,8 +1684,14 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
             return { ok: true, change, file: 'changes/' + change.id + '.json' };
         }
         const out: ChangeListRow[] = [];
+        const loadErrors: Diagnostic[] = [];
         for (const id of await listChangeIds(proj.dir)) {
-            const { change } = await loadChangeFile(proj.dir, id);
+            const { change, error } = await loadChangeFile(proj.dir, id);
+            if (error !== null) {
+                // 不让坏变更文件在列表里"消失"（P0-04：读工具不得静默吞错）
+                loadErrors.push(error);
+                continue;
+            }
             if (change === null)
                 continue;
             if (typeof args.status === 'string' && args.status !== '' && change.status !== args.status)
@@ -1652,6 +1705,9 @@ export function registerTools(ctx: Context, env: ToolEnv): void {
                 created_at: change.created_at,
                 closed_at: change.closed_at ?? null,
             });
+        }
+        if (loadErrors.length > 0) {
+            return { ok: false, count: out.length, changes: out, errors: loadErrors.map(fmtDiag), hint: '有变更文件无法解析：先修复这些 JSON，再重试列表（不会静默跳过）' };
         }
         const counts: Record<string, number> = { proposed: 0, in_progress: 0, verified: 0, abandoned: 0 };
         for (const c of out)

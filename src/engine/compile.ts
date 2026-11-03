@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
 import { apiKey, depthOf, treeOf } from './ids.js';
 import { sha256Text } from './store.js';
+import { writeFileAtomic } from './atomic.js';
 import type { Api, Dep, Diagnostic, LayoutData, LocalizedText, ModuleState, SourceRef } from './types.js';
 import { validateProject, type ValidateOptions, type ValidateOutput } from './validate.js';
 import { diag } from './diag.js';
@@ -10,6 +10,8 @@ export interface BuildOptions extends ValidateOptions {
 export interface BuildOutput {
     ok: boolean;
     receipt: Record<string, unknown> | null;
+    /** receipt.json 自身的 SHA-256（写入 receipt.sha256 sidecar；receipt 内部不含自身哈希，见 P0-03）。 */
+    receiptSha256: string | null;
     errors: Diagnostic[];
     warnings: Diagnostic[];
     validate: ValidateOutput | null;
@@ -112,7 +114,7 @@ function outlineText(slug: string, v: ValidateOutput): string {
 export async function buildProject(projectDir: string, opts: BuildOptions): Promise<BuildOutput> {
     const v = await validateProject(projectDir, opts);
     if (!v.ok) {
-        return { ok: false, receipt: null, errors: v.errors, warnings: v.warnings, validate: v };
+        return { ok: false, receipt: null, receiptSha256: null, errors: v.errors, warnings: v.warnings, validate: v };
     }
     const slug = projectDir.split(/[\\\/]/).pop() ?? 'project';
     const files = [...v.files].sort((a, b) => a.module.id.localeCompare(b.module.id));
@@ -256,12 +258,14 @@ export async function buildProject(projectDir: string, opts: BuildOptions): Prom
         const treeText = JSON.stringify(treeJson, null, 2) + '\n';
         const outline = outlineText(slug, v);
         const apiIndexText = JSON.stringify(Object.fromEntries(Object.entries(apiIndex).sort(([a], [b]) => a.localeCompare(b))), null, 2) + '\n';
-        await writeFile(join(projectDir, 'tree.json'), treeText, 'utf8');
-        await writeFile(join(projectDir, 'outline.md'), outline, 'utf8');
-        await writeFile(join(projectDir, 'api-index.json'), apiIndexText, 'utf8');
+        await writeFileAtomic(join(projectDir, 'tree.json'), treeText);
+        await writeFileAtomic(join(projectDir, 'outline.md'), outline);
+        await writeFileAtomic(join(projectDir, 'api-index.json'), apiIndexText);
         const warningSummary: Record<string, number> = {};
         for (const w of v.warnings)
             warningSummary[w.code] = (warningSummary[w.code] ?? 0) + 1;
+        // receipt 只记录其它产物的哈希；自身哈希写 receipt.sha256 sidecar。
+        // 把文件自身哈希写进自身在逻辑上不可能成立（P0-03 / issue #2）。
         const artifacts: Record<string, { sha256: string; bytes: number }> = {
             'tree.json': { sha256: sha256Text(treeText), bytes: Buffer.byteLength(treeText, 'utf8') },
             'outline.md': { sha256: sha256Text(outline), bytes: Buffer.byteLength(outline, 'utf8') },
@@ -278,16 +282,17 @@ export async function buildProject(projectDir: string, opts: BuildOptions): Prom
             warnings: warningSummary,
             artifacts,
         };
-        const receiptText0 = JSON.stringify(receipt, null, 2) + '\n';
-        artifacts['receipt.json'] = { sha256: sha256Text(receiptText0), bytes: Buffer.byteLength(receiptText0, 'utf8') };
         const receiptText = JSON.stringify(receipt, null, 2) + '\n';
-        await writeFile(join(projectDir, 'receipt.json'), receiptText, 'utf8');
-        return { ok: true, receipt, errors: [], warnings: v.warnings, validate: v };
+        await writeFileAtomic(join(projectDir, 'receipt.json'), receiptText);
+        const receiptSha256 = sha256Text(receiptText);
+        await writeFileAtomic(join(projectDir, 'receipt.sha256'), receiptSha256 + '\n');
+        return { ok: true, receipt, receiptSha256, errors: [], warnings: v.warnings, validate: v };
     }
     catch (error) {
         return {
             ok: false,
             receipt: null,
+            receiptSha256: null,
             errors: [diag('error', 'build/write-failed', '编译产物写入失败：' + String(error), {}, {}, [])],
             warnings: v.warnings,
             validate: v,

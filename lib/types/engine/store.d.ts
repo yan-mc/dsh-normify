@@ -47,12 +47,15 @@ export declare function gitHead(repoRoot: string): {
     sha: string | null;
     error: string | null;
 };
+export declare function isValidDiffSpec(spec: string): boolean;
 /** git 变更文件清单（增量再生成的输入）。 */
 export declare function gitChangedFiles(repoRoot: string, diffSpec: string): {
     files: string[] | null;
     error: string | null;
 };
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。 */
+/** 仓库内相对路径是否安全（无绝对/反斜杠/空段/..），用于 fingerprint 的 source 白名单。 */
+export declare function isSafeRepoRelative(p: string): boolean;
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。越界/不安全路径按缺失处理并在 missing 中列出。 */
 export declare function fingerprintOf(repoRoot: string, sources: SourceRef[]): Promise<{
     hash: string | null;
     missing: string[];

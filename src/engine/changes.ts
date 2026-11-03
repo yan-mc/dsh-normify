@@ -1,8 +1,9 @@
-import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readdir, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CHANGE_STATUSES } from './types.js';
 import type { ChangeData, ChangeModules, ChangeStatus, Diagnostic, LocalizedText, ModuleFile } from './types.js';
 import { diag } from './diag.js';
+import { writeFileAtomic } from './atomic.js';
 import { apiKey, isValidId } from './ids.js';
 /**
  * 开发变更日志（changes/<id>.json）：放在结构数据目录内，随工程一起回档。
@@ -10,7 +11,7 @@ import { apiKey, isValidId } from './ids.js';
  */
 export const CHANGE_SCHEMA_VERSION = 1;
 export const CHANGES_DIR = 'changes';
-const CHANGE_KEYS = ['schema_version', 'id', 'title', 'status', 'intent', 'modules', 'acceptance', 'note', 'revision', 'created_at', 'updated_at', 'closed_at'];
+const CHANGE_KEYS = ['schema_version', 'id', 'title', 'status', 'intent', 'modules', 'delete_snapshot', 'acceptance', 'note', 'revision', 'created_at', 'updated_at', 'closed_at'];
 const MODULE_KEYS = ['create', 'modify', 'delete', 'api_add', 'api_remove'];
 export function isValidChangeId(id: string): boolean {
     return /^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]{0,63}$/.test(id);
@@ -126,6 +127,14 @@ export function l1ValidateChange(data: unknown, id: string, where: string): {
             }
         }
     }
+    if (data.delete_snapshot !== undefined) {
+        if (!Array.isArray(data.delete_snapshot) || data.delete_snapshot.some(x => typeof x !== 'string' || !isValidId(x))) {
+            errors.push(diag('error', 'change/delete-snapshot', 'delete_snapshot 必须为合法模块 id 数组', { change: id }, { value: data.delete_snapshot }, ['由 normify_change_open/update 自动维护，不要手写']));
+        }
+        else if (new Set(data.delete_snapshot).size !== data.delete_snapshot.length) {
+            errors.push(diag('error', 'change/delete-snapshot-duplicate', 'delete_snapshot 中存在重复模块 id', { change: id }, {}, []));
+        }
+    }
     if (errors.length > 0)
         return { change: null, errors, warnings };
     const change: ChangeData = {
@@ -135,6 +144,7 @@ export function l1ValidateChange(data: unknown, id: string, where: string): {
         status: data.status as ChangeStatus,
         intent: data.intent as LocalizedText,
         modules: modules as ChangeModules,
+        ...(Array.isArray(data.delete_snapshot) ? { delete_snapshot: [...data.delete_snapshot] as string[] } : {}),
         acceptance: data.acceptance as string[],
         ...(typeof data.note === 'string' ? { note: data.note } : {}),
         revision: { before: rev.before ?? null, after: rev.after ?? null },
@@ -184,7 +194,7 @@ export async function loadChangeFile(projectDir: string, id: string): Promise<{
 }
 export async function writeChangeFile(projectDir: string, change: ChangeData): Promise<string> {
     await mkdir(join(projectDir, CHANGES_DIR), { recursive: true });
-    await writeFile(changeFilePath(projectDir, change.id), JSON.stringify(change, null, 2) + '\n', 'utf8');
+    await writeFileAtomic(changeFilePath(projectDir, change.id), JSON.stringify(change, null, 2) + '\n');
     return CHANGES_DIR + '/' + change.id + '.json';
 }
 /** L2：全部变更文件与当前模块集的一致性校验。 */
@@ -209,10 +219,23 @@ export async function validateChanges(projectDir: string, byId: Map<string, Modu
         changes.push(change);
         if (change.status === 'in_progress')
             inProgress++;
-        const refs = [...(change.modules.create ?? []), ...(change.modules.modify ?? []), ...(change.modules.delete ?? [])];
-        for (const ref of refs) {
+        const snapshot = new Set(change.delete_snapshot ?? []);
+        // create/modify 引用的模块必须存在；delete 目标允许"已按变更删除"（快照命中）
+        for (const ref of [...(change.modules.create ?? []), ...(change.modules.modify ?? [])]) {
             if (!byId.has(ref)) {
                 errors.push(diag('error', 'change/module-missing', '变更引用的模块不存在', { change: id, module: ref }, {}, ['先创建该模块（计划态允许）或修正变更清单']));
+            }
+        }
+        for (const ref of change.modules.delete ?? []) {
+            if (byId.has(ref))
+                continue;
+            if (snapshot.has(ref))
+                continue;
+            errors.push(diag('error', 'change/module-missing', '变更要删除的模块既不存在、也不在 delete_snapshot 中（可能是模块已被删除但变更未记录）', { change: id, module: ref }, { delete_snapshot: [...snapshot] }, ['用 normify_change_update 补上 delete_snapshot，或修正变更清单', '若是 0.5.4 及以前创建的删除型变更：补一次 change_update（会自动回填快照）']));
+        }
+        for (const ref of snapshot) {
+            if (!(change.modules.delete ?? []).includes(ref)) {
+                warnings.push(diag('warning', 'change/delete-snapshot-orphan', 'delete_snapshot 中的模块不在本次 delete 清单里', { change: id, module: ref }, {}, ['由 change_update 自动清理']));
             }
         }
         for (const key of ['api_add', 'api_remove'] as const) {

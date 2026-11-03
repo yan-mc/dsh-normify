@@ -113,10 +113,18 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
     if (r.change === null)
         return { ok: false, phase: 'change-write', errors: r.errors, warnings: r.warnings, change };
     const file = await writeChangeFile(projectDir, r.change);
-    // 变更状态落盘后重建一次产物，让 tree.json/receipt 反映 change_count / open_change_count
+    // 变更状态落盘后重建一次产物，让 tree.json/receipt 反映 change_count / open_change_count。
+    // 若重建失败，把变更回滚到关闭前状态（"任何一步失败都不关闭"，P0-04）。
     const rebuilt = await buildProject(projectDir, { repoRoot, requireBilingual: opts.requireBilingual });
-    if (!rebuilt.ok)
-        return { ok: false, phase: 'rebuild', errors: rebuilt.errors, warnings: rebuilt.warnings, change: r.change };
+    if (!rebuilt.ok) {
+        try {
+            await writeChangeFile(projectDir, change);
+        }
+        catch {
+            /* 回滚失败时保留原错误，错误信息里已包含 rebuild 失败 */
+        }
+        return { ok: false, phase: 'rebuild', errors: rebuilt.errors, warnings: rebuilt.warnings, change };
+    }
     return {
         ok: true,
         phase: 'verified',

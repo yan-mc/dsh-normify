@@ -92,6 +92,8 @@ export interface ChangeData {
     status: ChangeStatus;
     intent: LocalizedText;
     modules: ChangeModules;
+    /** change_open 时对 modules.delete 目标做的快照：删除完成后这些 id 不再存在，但变更仍可校验/关闭。 */
+    delete_snapshot?: string[];
     acceptance: string[];
     note?: string;
     revision: {

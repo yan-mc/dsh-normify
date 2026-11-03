@@ -1,9 +1,10 @@
-import { readdir, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+import { readdir, readFile, rm, mkdir } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { DEP_KINDS, LAYOUT_MODES } from './types.js';
 import type { Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, ModuleFile } from './types.js';
 import { diag } from './diag.js';
+import { writeFileAtomic } from './atomic.js';
 import { isValidId, splitId } from './ids.js';
 /**
  * 渲染数据集：与结构数据集并行的一份可读性数据，只存在于容器模块（有子级的模块）。
@@ -360,7 +361,7 @@ export function serializeLayout(layout: LayoutData): string {
 export async function writeLayoutFile(projectDir: string, layout: LayoutData): Promise<string> {
     const path = layoutFilePath(projectDir, layout.id);
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, serializeLayout(layout), 'utf8');
+    await writeFileAtomic(path, serializeLayout(layout));
     return layoutRelPath(layout.id);
 }
 export async function deleteLayoutFile(projectDir: string, id: string): Promise<boolean> {

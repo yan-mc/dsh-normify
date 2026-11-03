@@ -1,8 +1,9 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as yamlParse, stringify as yamlStringify, YAMLParseError } from 'yaml';
 import { DEP_KINDS, MODULE_STATES, POLICY_RULE_TYPES } from './types.js';
 import { diag } from './diag.js';
+import { writeFileAtomic } from './atomic.js';
 import { depthOf, treeOf } from './ids.js';
 import type { Diagnostic, ModuleFile, PolicyData, LocalizedText, Module, ModuleState, PolicyLayer, PolicyRule, PolicyRuleType } from './types.js';
 /**
@@ -274,7 +275,7 @@ export async function writePolicyFile(projectDir: string, policy: PolicyData): P
     const body = yamlStringify({ schema_version: POLICY_SCHEMA_VERSION, updated_at: policy.updated_at, rules: policy.rules }, { lineWidth: 0 });
     const text = '# Normify 架构规则（policy.yml）：normify_validate 强制执行；规则类型与示例见 normify_policy_get。\n' + body;
     await mkdir(projectDir, { recursive: true });
-    await writeFile(policyFilePath(projectDir), text, 'utf8');
+    await writeFileAtomic(policyFilePath(projectDir), text);
     return 'policy.yml';
 }
 /** 项目创建时安装默认规则（已存在则不覆盖）。 */
@@ -283,7 +284,7 @@ export async function installDefaultPolicy(projectDir: string): Promise<void> {
     if (exists)
         return;
     await mkdir(projectDir, { recursive: true });
-    await writeFile(policyFilePath(projectDir), defaultPolicyTemplate(), 'utf8');
+    await writeFileAtomic(policyFilePath(projectDir), defaultPolicyTemplate());
 }
 interface EvalContext {
     files: ModuleFile[];

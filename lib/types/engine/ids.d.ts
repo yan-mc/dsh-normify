@@ -1,4 +1,8 @@
 import type { Api } from './types.js';
+/** 保留段名：`index` 与容器文件 `index.md` 冲突（0.5.5 起在 L1 直接拒绝，见 issue #3）。 */
+export declare const RESERVED_SEGMENTS: ReadonlySet<string>;
+/** 返回 id 中第一个保留段名（无则 null），供诊断给出精确修法。 */
+export declare function findReservedSegment(id: string): string | null;
 export declare function splitId(id: string): string[] | null;
 export declare function isValidId(id: string): boolean;
 /** 父 id = 去掉最后一段；单段（树名/根）的父为 null。 */
