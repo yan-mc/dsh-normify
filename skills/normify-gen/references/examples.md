@@ -1,6 +1,6 @@
 # 示例（examples）
 
-> SKILL 的参考文件之一。字段规则见 [format.md](format.md)；这些示例可直接改后用 `normify_module_upsert` 写入。
+> SKILL 的参考文件之一。字段规则见 [format.md](format.md)；这些示例可直接改后用 `write{op:"upsert"}` 写入（CLI：`call normify_module_upsert`）。
 
 ## 1. 完整模块文件（叶子）
 

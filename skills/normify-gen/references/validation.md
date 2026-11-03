@@ -8,11 +8,11 @@
 | 层 | 触发 | 校验内容 |
 | --- | --- | --- |
 | **L1** | 每次写入（upsert/patch/batch/move/promote/layout_upsert…） | 必填字段、id 文法、uid、parent 一致性、双语长度、source/apis/deps 形状、state/replacement、保留段名 |
-| **L2** | `normify_validate`（CLI：`normify validate`） | 全项目：id/uid/API 键唯一、文件↔id 映射、叶子/非叶子规则、依赖目标/环、渲染数据交叉校验、架构规则、变更日志、可选仓库证据（source 存在性 + fingerprint 一致） |
-| **L3** | `normify_build`（CLI：`normify build`） | 任何 error 都不产出产物；产出后写 `structure-manifest.json` + `receipt.json` + `receipt.sha256` |
+| **L2** | `normify_check{op:"validate"}`（CLI：`normify validate`） | 全项目：id/uid/API 键唯一、文件↔id 映射、叶子/非叶子规则、依赖目标/环、渲染数据交叉校验、架构规则、变更日志、可选仓库证据（source 存在性 + fingerprint 一致） |
+| **L3** | `normify_build{op:"build"}`（CLI：`normify build`） | 任何 error 都不产出产物；产出后写 `structure-manifest.json` + `receipt.json` + `receipt.sha256` |
 | **回执自证** | `normify verify`（CLI） | `receipt.sha256` → `receipt.json` → 各产物哈希逐件复算；不一致 exit 2 |
 
-- **error 阻断**：`build` / `change_close` 遇到任何 error 都拒绝继续；**warning 不阻断**但收尾必须汇报。
+- **error 阻断**：`build{op:"build"}` / `change{op:"close"}` 遇到任何 error 都拒绝继续；**warning 不阻断**但收尾必须汇报。
 - 诊断对象形状：`severity / code / message / subject / evidence / supportedFixes`。
 - 修法优先级：先读 `supportedFixes`，再看 `evidence`；不要靠猜。
 
@@ -36,7 +36,7 @@ node lib/cli/index.js get --dir F:/repo/normify-demo --id demo.order
 | --- | --- | --- |
 | `structure/parent-mismatch` | `parent` ≠ id 去尾段 | 按 `evidence.derived` 改 parent |
 | `structure/parent-not-exist` | 孤儿（父不存在） | 先建父模块，或修正 parent |
-| `structure/file-id-mismatch` | 文件路径与 id 不一致 | 用 `normify_module_upsert` 重写该模块（自动落位） |
+| `structure/file-id-mismatch` | 文件路径与 id 不一致 | 用 `write{op:"upsert"}` 重写该模块（自动落位） |
 | `structure/id-format` | id 段格式非法 | 按段规则改名（保留 uid） |
 | `structure/id-reserved` | id 末段用了保留段 `index` | 换成具体功能名（如 `indexer`）；用 move 迁移 |
 | `structure/uid-format` / `structure/uid-duplicate` | uid 非法/重复 | 重新分配 8 位 hex（改名/移动时保留原 uid） |
@@ -62,18 +62,18 @@ node lib/cli/index.js get --dir F:/repo/normify-demo --id demo.order
 
 | 诊断码 | 含义 | 修法 |
 | --- | --- | --- |
-| `evidence/fingerprint-drift` | fingerprint 与仓库当前内容不一致 | `normify_sync` 找漂移 → `module_refresh` 重算 |
+| `evidence/fingerprint-drift` | fingerprint 与仓库当前内容不一致 | `check{op:"drift"}` 找漂移 → `change{op:"close"}` 刷新（legacy：`normify_module_refresh`） |
 | `evidence/source-missing` | source 指向的文件不存在 | 修正 path 或重算结构 |
 | `evidence/fingerprint-pending` | 非 planned 模块用了 pending | 重算 fingerprint，或把 state 改为 planned |
 | `evidence/checks-skipped`（warning） | 未传 repoRoot，跳过证据校验 | 交付前带 `--repo-root` 跑 validate |
-| `structure/planned-source-missing`（warning） | planned 源码未落地 | 实现后 `refresh(activate:true)` |
+| `structure/planned-source-missing`（warning） | planned 源码未落地 | 实现后 `change{op:"close"}` 自动激活（legacy：`refresh(activate:true)`） |
 | `structure/leaf-too-coarse` / `structure/shallow-hierarchy`（warning） | 结构过粗/过浅 | 继续拆分（见 [recipes.md](recipes.md) 的粒度指引） |
 
 ### 渲染数据
 
 | 诊断码 | 含义 | 修法 |
 | --- | --- | --- |
-| `layout/missing`（warning） | 容器缺渲染数据 | `normify_layout_upsert` 补 order/groups/mode |
+| `layout/missing`（warning） | 容器缺渲染数据 | `write{op:"layout_upsert"}` 补 order/groups/mode |
 | `layout/order-child` / `layout/group-child` | 引用了非直接子模块 | 改成直接子模块 id |
 | `layout/hint-edge-missing` | edge_hint 指向的兄弟边不存在 | 删除 hint 或先补 deps |
 | `layout/orphan` / `layout/not-container` | 渲染数据没有对应容器 | 删文件，或先建/拆模块 |
@@ -83,12 +83,12 @@ node lib/cli/index.js get --dir F:/repo/normify-demo --id demo.order
 
 | 诊断码 | 含义 | 修法 |
 | --- | --- | --- |
-| `policy/<rule-id>`（动态） | 架构规则违规 | 按 supportedFixes 改设计；确需调整规则时用 `normify_policy_upsert` 并说明理由 |
-| `policy/missing`（warning） | 项目未安装 policy.yml | `normify_policy_upsert` 安装默认规则 |
-| `policy/schema-version` / `policy/rule-type` | policy 文件格式错 | 参照 `normify_policy_get` 模板重写 |
+| `policy/<rule-id>`（动态） | 架构规则违规 | 按 supportedFixes 改设计；确需调整规则时用 `normify_policy_upsert`（legacy/CLI）并说明理由 |
+| `policy/missing`（warning） | 项目未安装 policy.yml | `normify_policy_upsert`（legacy/CLI）安装默认规则 |
+| `policy/schema-version` / `policy/rule-type` | policy 文件格式错 | 参照 `read{op:"policy"}` 模板重写 |
 | `change/module-missing` | 变更引用不存在的模块 | 先建模块（planned 可）再重开/更新变更 |
-| `change/create-not-landed` | close 时 create 清单仍 planned | 实现并 activate 后再 close |
-| `change/delete-snapshot` | delete_snapshot 非法/被手改 | 由 `change_update` 自动回填，不要手写 |
+| `change/create-not-landed` | close 时 create 清单仍 planned | 实现并激活后再 close |
+| `change/delete-snapshot` | delete_snapshot 非法/被手改 | 由 `change{op:"update"}` 自动回填，不要手写 |
 | `refresh/activate-not-landed` | 请求激活但源码未落地 | 先实现 source 指向的文件 |
 | `render/invalid-out` | `out` 带路径/非法文件名 | 只传纯文件名（如 `normify.html`） |
 | `verify/no-receipt` / `verify/sidecar-missing` | 缺回执或 sidecar | 重新 `build` |

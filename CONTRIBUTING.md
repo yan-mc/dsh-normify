@@ -54,5 +54,5 @@ node scripts/check-core-boundary.mjs
 ## 当前开发线
 
 - `main`：可发布线（tag = Release = `package.json` 版本）。
-- 0.6.0 重构在 `refactor/v1` 进行；合入前以 `pack-smoke --all --strict` + 6 套测试为准。
+- 0.7.0 在 refactor/v1 进行（Phase 2：默认 7 原语 + legacyTools 过渡）
 - 发布动作必须走 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)，不允许红 CI 发版。

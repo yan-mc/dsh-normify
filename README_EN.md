@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-0891b2?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-0891b2?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/DSH-Plugin-7C3AED?style=flat-square" alt="DSH Plugin">
   <img src="https://img.shields.io/badge/DSH-0.2.1--rc.5-7C3AED?style=flat-square" alt="DSH">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square" alt="Node">
-  <img src="https://img.shields.io/badge/tools-31-0ea5e9?style=flat-square" alt="31 tools">
+  <img src="https://img.shields.io/badge/primitives-7-0ea5e9?style=flat-square" alt="7 primitives (+31 legacy)">
 </p>
 
 <h1 align="center">Normify · Normalized Architecture Map Builder</h1>
@@ -21,18 +21,20 @@
 
 Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a development workflow written for AI agents**:
 
-- **For the AI**: a `normify-gen` skill plus **31 `normify_*` tools** — the model turns a repository into a module-tree
-  structure database, then keeps it alive through development (design-first planned trees → implement → close the change).
+- **For the AI**: a `normify-gen` skill plus **7 primitive tools** (`normify_project` / `read` / `write` / `check` /
+  `build` / `render` / `change`, dispatched by `op`; the 31 legacy tool names remain available via `legacyTools` for
+  the transition) — the model turns a repository into a module-tree structure database and keeps it alive through
+  development (design-first planned trees → implement → close the change).
 - **For the engine**: zero-tolerance validation (L1 write-time / L2 project-wide / L3 frozen artifacts),
-  deterministic compilation (`tree.json` and three sibling artifacts with SHA-256 frozen receipts) and
+  deterministic compilation (five artifacts with a self-verifiable `receipt.sha256` chain) and
   render datasets (`renders/`) that decide *how each level is drawn*.
 - **For humans**: a **single-file interactive architecture map** (`normify.html`) — drill-down levels, hover
   descriptions, one-click zh/en switch, deep links, multi-tree, **API-anchored arrows**, cross-level aggregation,
   zoom and search. Zero external dependencies: open it by double-clicking.
 
 > It is not a "render a picture and you're done" tool: the structure data and the code are **contracts for each other**.
-> `normify_sync` detects drift after every change, and `normify_change_close` (zero-error enforced) closes the loop,
-> so the map never drifts away from the code.
+> `normify_check{op:"drift"}` detects drift after every change, and `normify_change{op:"close"}` (zero-error enforced)
+> closes the loop, so the map never drifts away from the code.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/engine.png" alt="Engine level with API-anchored arrows" width="100%">
@@ -43,10 +45,10 @@ Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a develo
 
 | Pain | How Normify answers it |
 | --- | --- |
-| Diagrams rot the moment they are drawn | The structure data is **validatable source data**: `normify_sync` reports fingerprint drift, `normify_change_close` enforces zero errors |
+| Diagrams rot the moment they are drawn | The structure data is **validatable source data**: `normify_check{op:"drift"}` reports fingerprint drift, `normify_change{op:"close"}` enforces zero errors |
 | Diagrams are too coarse to show contracts | Granularity goes down to a **single functional unit**; APIs live on leaves and arrows can anchor to a concrete API (`from_api` / `to_api`) |
-| AI cannot see the whole picture while editing | `normify_brief` returns target contracts, impact surface (who depends on me), policy constraints and an acceptance checklist |
-| Design-after-code always drifts | **Planned-first**: create the tree in `state: planned`, flip to `active` with `normify_module_refresh(activate)` once the code lands |
+| AI cannot see the whole picture while editing | `normify_read{op:"brief"}` returns target contracts, impact surface (who depends on me), policy constraints and an acceptance checklist |
+| Design-after-code always drifts | **Planned-first**: create the tree in `state: planned`, then `normify_change{op:"close"}` refreshes fingerprints and activates planned modules (legacy: `normify_module_refresh(activate)`) |
 | Conventions rely on discipline | `policy.yml` rules (dependency direction / forbid / acyclic / depth / cross-tree / naming) are enforced by `validate` |
 | Full regeneration is too heavy for big repos | Incremental regeneration: only the affected subtree is rebuilt, `layouts_to_review` names the levels to re-check |
 
@@ -67,8 +69,8 @@ Normify is a **DeepSeek Harness (DSH) plugin** and, at the same time, **a develo
 | Layer | When | What |
 | --- | --- | --- |
 | **L1** | every write | required fields, id grammar, uid, parent consistency, bilingual lengths, source/apis/deps shapes, state/replacement |
-| **L2** | `normify_validate` | uniqueness, file↔id mapping, leaf/non-leaf rules, globally unique API keys, dependency targets, cycles, render-data cross checks, policy, change log, optional repository evidence (source existence + fingerprint match) |
-| **L3** | `normify_build` | nothing is emitted when any error exists; five artifacts (tree/outline/api-index/structure-manifest/receipt) plus a `receipt.sha256` receipt chain |
+| **L2** | `normify_check{op:"validate"}` | uniqueness, file↔id mapping, leaf/non-leaf rules, globally unique API keys, dependency targets, cycles, render-data cross checks, policy, change log, optional repository evidence (source existence + fingerprint match) |
+| **L3** | `normify_build{op:"build"}` | nothing is emitted when any error exists; five artifacts (tree/outline/api-index/structure-manifest/receipt) plus a `receipt.sha256` receipt chain |
 
 Every diagnostic carries `severity / code / message / subject / evidence / supportedFixes` so the **AI can fix it itself**.
 
@@ -86,15 +88,17 @@ Every diagnostic carries `severity / code / message / subject / evidence / suppo
 ### 2.4 Companion development — design first
 
 ```
-change_open → brief → check → module_batch(state=planned) → 【write the code】
-   → module_refresh(activate) → change_close (zero-error enforced) → verified + revision.after
+normify_change{op:"open"} → normify_read{op:"brief"} → normify_check{op:"check"}
+  → normify_write{op:"batch"}(state=planned) → 【write the code】 → normify_change{op:"close"} (zero-error enforced)
+  → verified + revision.after
 ```
 
-- **Planned state**: a module may exist before its source does (`fingerprint: pending`); `validate` allows it.
+- **Planned state**: a module may exist before its source does (`fingerprint: pending`); `normify_check{op:"validate"}` allows it.
 - **No fake activation**: activating or closing before the source lands is refused.
 - **Closing is a loop, not a flag**: refresh fingerprints → validate (zero-error) → build (optionally render) → mark
   `verified`; any failing step leaves the change untouched.
-- **The map follows the code**: `normify_sync` uses `git diff` plus untracked files to find affected modules and drift.
+- **The map follows the code**: `normify_check{op:"drift"}` uses `git diff` plus untracked files to find affected modules and drift;
+  `normify_write{op:"patch"}` updates them.
 
 ### 2.5 Policy first (`policy.yml`)
 
@@ -107,11 +111,33 @@ change_open → brief → check → module_batch(state=planned) → 【write the
 | `cross-tree` | cross-tree strategy: `forbid` / `allow` / `require-to-api` |
 | `naming` | regex over id segments inside a scope |
 
-Once installed, `normify_validate` / `normify_build` / `normify_check` all enforce it: **fix the design, don't bypass the rule**.
+Once installed, `normify_check` (op=validate/check/drift) and `normify_build` (op=build) enforce it: **fix the design, don't bypass the rule**.
 
 ## 3. Release highlights
 
-### v0.5.5 — P0 stop-the-bleeding: support the current DSH 0.2.x (current)
+### v0.7.0 — default tool surface switched to 7 primitives (current)
+
+- **7 primitives by default**: `normify_project / read / write / check / build / render / change` (dispatched by `op`,
+  see §7); resident schema size and tool-selection ambiguity drop significantly.
+- **Smooth transition**: `config.legacyTools: true` additionally registers the 31 legacy names (one minor);
+  `config.toolset: "full"` restores the old 31-tool surface completely.
+- **Unchanged**: structure-data format v1, five artifacts + SBOM + `verify` receipt chain, CLI commands/exit codes,
+  installation and DSH compatibility range.
+- **Evaluation**: new retrieval-layer evaluation (n≥3, reproducible — see [docs/EVAL-RESULTS.md](docs/EVAL-RESULTS.md));
+  old A/B wording changed to "n=1 feasibility experiment" (methodology in [docs/EVAL.md](docs/EVAL.md)).
+- **Distribution & decision gates**: new [docs/MARKET.md](docs/MARKET.md) (official market / dshbase / dshhub materials);
+  ADR-0011 (no in-Harness UI panel for 0.7), ADR-0012 (no MCP adapter for 0.7; CLI-first).
+- Verification: `pack-smoke --all --strict` **PASS 43 / FAIL 0 / WARN 0**; platform-contract 25/25 (7-primitive / legacy / full modes).
+
+### v0.6.0 — Phase 1 internal refactor (core/dsh/cli + CLI + SBOM)
+
+- `src/core` (pure-Node engine) / `src/dsh` (DSH adapter) / `src/cli` (cross-agent CLI); `lib/` no longer committed.
+- Added CLI, structure SBOM (`structure-manifest.json`), self-verifiable `receipt.sha256` chain, `normify verify`,
+  semantic structure diff.
+- DSH adapter: real `output.schema` / presenters / destroy approval; test & CI matrix; much faster write path.
+- **Public surface unchanged**: 31 legacy tool names, data format v1, installation contract (7 primitives are opt-in).
+
+### v0.5.5 — P0 stop-the-bleeding: support the current DSH 0.2.x
 
 - **Current DSH only**: `engines.dsh` is now `>=0.2.1-rc.1 <0.3.0` (target runtime: DSH `0.2.1-rc.5`).
   Only the current DSH line is supported; stay on 0.5.4 if you still run 0.1.x.
@@ -140,10 +166,8 @@ This release fixes the four *tool-side* issues that run exposed:
   `args/invalid-patch`, echoing the received keys and the correct shape `{patch:{id, patch:{...}}}`. A single-module
   `normify_module_patch` with an empty patch now fails with `args/empty-patch` too (passing only `expect_updated_at`
   no longer slips through).
-- **`normify_module_refresh` no longer hard-requires git**: with a non-git `repoRoot` it used to fail with
-  `refresh/git-failed` (the agent had to `git init` just to activate modules). It now degrades gracefully: fingerprints
-  are recomputed, state is still activated, `revision` keeps its previous value, and a `refresh/git-unavailable`
-  warning explains how to fix it.
+- **`normify_module_refresh` no longer hard-requires git**: with a non-git `repoRoot` it used to fail
+  (the agent had to `git init` just to activate modules); it now degrades with a `refresh/git-unavailable` warning.
 - **Clearer `change_open` acceptance errors**: putting a `{zh,en}` object into `acceptance` used to produce one vague
   error; it now says which entry is wrong ("entry #N is not a non-empty string … acceptance only accepts plain
   strings") and suggests putting localized text in `title`/`intent`.
@@ -163,7 +187,7 @@ extra 41-module / 110-API / 10-layer architecture dataset — and hit the four r
   An unknown topic now **fails loudly** and lists the valid ones instead of being silently ignored.
 - **Project bootstrap**: new 31st tool `normify_project_init` creates `normify-<slug>/` plus the default policy,
   optionally with a planned root module in one call (idempotent). `normify_change_open` now also **creates the project
-  directory on demand** (it used to fail with `project/no-modules`), and `normify_brief` on a missing module returns an
+  directory on demand** (it used to fail with a "project directory missing" error), and `normify_brief` on a missing module returns an
   actionable hint instead of a bare error.
 - **Causal batch diagnostics**: one `label-too-long` used to cascade into three `dep/target-missing` errors (L1-failed
   modules are removed from the batch working set). Follow-on errors are now reported as `dep/target-dropped` /
@@ -221,7 +245,7 @@ extra 41-module / 110-API / 10-layer architecture dataset — and hit the four r
 
 ## 4. Screenshots
 
-| Overview (129 modules) | Tools (31 tools, five families) |
+| Overview (129 modules) | Tools (0.6 view: 31 tools; 7 primitives by default since 0.7) |
 | --- | --- |
 | ![overview](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/overview.png) | ![tools](https://raw.githubusercontent.com/yan-mc/dsh-normify/main/docs/screenshots/tools.png) |
 
@@ -264,10 +288,11 @@ between builds.
 ### Verify
 
 ```text
-In a new DSH session, ask the agent: list the normify tools you have (you should see 31)
+In a new DSH session, ask the agent: list the normify tools you have
+# default: 7 primitives; legacyTools:true adds the 31 legacy names; toolset:"full" gives the 31 legacy tools only
 ```
 
-> ⚠️ On a version mismatch the plugin manager reports `incompatible-version` and rolls back: use **0.5.5+**
+> ⚠️ On a version mismatch the plugin manager reports `incompatible-version` and rolls back: use **0.7.0+**
 > (supports DSH 0.2.x); if you still need DSH 0.1.x, stay on 0.5.4.
 
 ## 6. Quick start
@@ -280,23 +305,23 @@ Use the normify-gen skill to build a structure tree and render an architecture m
 with granularity down to single functional units.
 
 # 2) design first, then code
-I want to add a "rate limiting" module to my-project: normify_brief first, create it in planned state,
-then I implement it and you refresh(activate) and change_close.
+I want to add a "rate limiting" module to my-project: give me a brief first (normify_read op=brief),
+create it in planned state, then I implement it and you change_close (it refreshes and activates planned modules).
 
 # 3) sync after code changes
-Sync the structure map of my-project (normify_sync): update affected modules and render data,
+Sync the structure map of my-project (normify_check op=drift): update affected modules and render data,
 then build + render once validate reports 0 errors.
 ```
 
-Under the hood the agent runs:
+Under the hood the agent runs (7 primitives by default since 0.7; ops in parentheses):
 
 ```text
-normify_tree_list → normify_module_upsert (root + first level)
-  → normify_module_list (drill down) → normify_module_batch (atomic batches)
-  → normify_layout_upsert (one render dataset per container)
-  → normify_fingerprint (always compute before writing a fingerprint)
-  → normify_validate (zero-error gate) → normify_build → normify_render
-  → normify_build{verify_only:true} (or CLI `verify`) confirms the receipt chain
+normify_project{op:"init"} → normify_write{op:"batch"} (root + first level, atomic)
+  → normify_read{op:"list"} (drill down)
+  → normify_write{op:"layout_upsert"} (one render dataset per container)
+  → normify_check{op:"validate"} (zero-error gate)
+  → normify_build{op:"build"} → normify_render{op:"render"}
+  → normify_build{op:"verify"} (or CLI `verify`) confirms the receipt chain
 ```
 
 Artifacts (inside the structure directory `normify-<slug>/`):
@@ -314,30 +339,49 @@ Artifacts (inside the structure directory `normify-<slug>/`):
 | `receipt.sha256` | checksum of `receipt.json` itself (sidecar, for external recomputation) |
 | `normify.html` | the single-file interactive map |
 
-## 7. The 31 tools
+## 7. Tool surface: 7 primitives (legacyTools transition)
 
-| Family | Tools | Purpose |
+Since 0.7.0 DSH registers **7 primitives by default** (dispatched by `op`). The CLI still uses the full tool set internally
+(commands unchanged).
+
+| Primitive | ops | Purpose |
 | --- | --- | --- |
-| **Reference** | `normify_help` | field and tool reference (read before authoring) |
-| **Read** | `normify_tree_list` | list projects and tree roots |
-| | `normify_module_get` / `normify_module_list` | read one module / list modules by parent or tree |
-| | `normify_search` / `normify_deps_find` / `normify_outline` | search, reverse lookup ("who depends on me"), rebuild `outline.md` |
-| **Write** | `normify_project_init` | initialise a structure project (directory + default policy; optional planned root) — the zeroth step for a new project |
-| | `normify_module_upsert` | create/update a module (write-time L1 validation, automatic file-form promotion) |
-| | `normify_module_delete` / `normify_module_promote` | delete a subtree (with dangling-edge warnings) / promote a leaf |
-| **Evolve** | `normify_module_patch` | partial update (`expect_updated_at` guard + `dry_run`) |
-| | `normify_module_batch` | atomic batch upsert/patch (whole-batch rollback) |
-| | `normify_module_move` | rename/move (uid preserved, cascading parents, project-wide dep rewrite) |
-| | `normify_module_refresh` | recompute fingerprint/revision; `activate` flips landed planned modules to active |
-| **Layouts** | `normify_layout_get/upsert/delete` | maintain "how this level is drawn" (order/groups/mode/reading/lanes) |
-| **Pipeline** | `normify_validate` | project-wide L2 validation (zero-error gate, optional evidence checks) |
-| | `normify_build` / `normify_render` | compile + freeze artifacts / render the single-file HTML |
-| | `normify_fingerprint` | deterministic source fingerprint (call before writing `fingerprint`) |
-| | `normify_sync` | incremental regeneration planner (dirty subtrees, new-file suggestions, drift, breaking API changes) |
-| **Companion** | `normify_brief` | development brief: contracts, impact surface, policy constraints, suggested modules, acceptance list |
-| | `normify_check` | pre-flight check of proposed modules and dependencies |
-| | `normify_change_open/update/list/close` | change log; `close` enforces zero errors |
-| | `normify_policy_get/upsert` | read / install `policy.yml` |
+| `normify_project` | `init` / `list` / `status` | initialise a project (optional planned root) / list projects / project overview |
+| `normify_read` | `get` / `list` / `search` / `deps` / `outline` / `brief` / `layout` / `policy` | read-only queries: module / list / search / reverse deps / outline / brief / layout / policy |
+| `normify_write` | `upsert` / `patch` / `batch` / `move` / `delete` / `promote` / `layout_upsert` / `layout_delete` | transactional writes (L1 validation, atomic batch, `dry_run`) |
+| `normify_check` | `validate` / `check` / `drift` / `policy` | L2 validation / design pre-flight / git drift & incremental plan / read policy |
+| `normify_build` | `build` / `verify` / `sbom` | compile five artifacts + SBOM + receipt chain / verify-only / SBOM only |
+| `normify_render` | `render` | render the single-file interactive HTML (`out` accepts a plain file name only) |
+| `normify_change` | `open` / `update` / `list` / `close` | change lifecycle; `close` enforces zero errors and activates planned modules |
+
+**Tool-surface config** (plugin config):
+
+| Config | Default | Effect |
+| --- | --- | --- |
+| `toolset: "core"` | ✅ | register the 7 primitives only |
+| `toolset: "full"` | — | register the 31 legacy tools only (the 0.6 surface) |
+| `legacyTools: true` | `false` | additionally register the 31 legacy names (one minor, removed in 0.8) |
+
+- `legacyTools:true` registers 7 + 28 = 35 entries; `normify_check` / `normify_build` / `normify_render` are also legacy names,
+  so use the primitive `op` during the transition.
+- The CLI (`normify ...` / `call <tool>`) is not affected by the plugin `toolset` and can always use all 31 legacy tools.
+
+**31 legacy names → primitive op (migration map)**
+
+| Legacy tool (0.6) | 0.7 usage |
+| --- | --- |
+| `normify_project_init` / `normify_tree_list` | `normify_project{op:"init" / "list"}` |
+| `normify_module_get` / `_list` / `_search` / `_deps_find` / `_outline` / `_brief` | `normify_read{op:"get"/"list"/"search"/"deps"/"outline"/"brief"}` |
+| `normify_layout_get` / `normify_policy_get` | `normify_read{op:"layout"/"policy"}` |
+| `normify_module_upsert` / `_patch` / `_batch` / `_move` / `_delete` / `_promote` | `normify_write{op:"upsert"/"patch"/"batch"/"move"/"delete"/"promote"}` |
+| `normify_layout_upsert` / `normify_layout_delete` | `normify_write{op:"layout_upsert"/"layout_delete"}` |
+| `normify_validate` / `normify_sync` | `normify_check{op:"validate"/"drift"}` |
+| `normify_build` / `normify_render` | `normify_build{op:"build"/"verify"/"sbom"}` / `normify_render{op:"render"}` |
+| `normify_change_open` / `_update` / `_list` / `_close` | `normify_change{op:"open"/"update"/"list"/"close"}` |
+| `normify_fingerprint` / `normify_module_refresh` / `normify_help` / `normify_policy_upsert` | **no primitive equivalent**: enable `legacyTools:true` or use the CLI (`normify call ...`) |
+
+> Parameter trees: `normify_help{topic:"tool:<name>"}` (legacy mode) or
+> `node lib/cli/index.js call <tool> --args-json ...`.
 
 ## 8. Module frontmatter
 
@@ -402,28 +446,28 @@ get explicit lanes via `edge_hints`.
 ### 10.1 Design first
 
 ```text
-(1) normify_change_open    open a change (title / intent / modules / acceptance)
-(2) normify_brief          contracts, impact surface, policy constraints, suggested modules, checklist
-(3) normify_check          pre-flight the proposed modules and dependencies
-(4) normify_module_batch   create planned modules (state=planned, fingerprint=pending, source may not exist yet)
-                           plus normify_layout_upsert for that level in the same round
+(1) normify_change{op:"open"}       open a change (title / intent / modules / acceptance)
+(2) normify_read{op:"brief"}        contracts, impact surface, policy constraints, suggested modules, checklist
+(3) normify_check{op:"check"}       pre-flight the proposed modules and dependencies
+(4) normify_write{op:"batch"}       create planned modules (state=planned, fingerprint=pending)
+                                    plus normify_write{op:"layout_upsert"} for that level in the same round
 (5) 【write the code】
-(6) normify_module_refresh recompute fingerprint/revision, activate:true → planned becomes active
-(7) normify_change_close   zero-error close: refresh → validate → build → verified + revision.after
+(6) normify_change{op:"close"}      refreshes fingerprints and activates planned modules
+(7) zero-error close: refresh → validate → build → verified + revision.after
 ```
 
-Planned modules keep `normify_validate` at 0 errors (a missing source is only a warning), and activating or closing
-before the code lands is refused.
+Planned modules keep `normify_check{op:"validate"}` at 0 errors (a missing source is only a warning), and activating or
+closing before the code lands is refused.
 
 ### 10.2 Companion update
 
 ```text
 (1) change the code (committed or not)
-(2) normify_sync           changed_files / affected / drift_fingerprints / layouts_to_review
-                           and "suggested modules" for new files (with ids and target paths)
-(3) normify_module_patch   add APIs, refresh descriptions, recompute fingerprint and revision
-(4) normify_validate       0 errors
-(5) normify_change_close   close and rebuild artifacts (tree.json reflects the change stats)
+(2) normify_check{op:"drift"}       changed_files / affected / drift_fingerprints / layouts_to_review
+                                    and "suggested modules" for new files (with ids and target paths)
+(3) normify_write{op:"patch"}       add APIs, refresh descriptions, tags, etc.
+(4) normify_check{op:"validate"}    0 errors
+(5) normify_change{op:"close"}      close and rebuild artifacts (tree.json reflects the change stats)
 ```
 
 ## 11. Repository layout & engineering
@@ -432,9 +476,11 @@ before the code lands is refused.
 npm install          # devDependencies (typescript / @types/node / cordis / schemastery / cosmokit)
 npm run build        # src/ → lib/ via tsc (lib/ is not committed; build before use)
 npm run typecheck    # tsc --noEmit
-npm test             # 6 suites: engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 / 0.5.5 (DSH-independent, node)
+npm test             # 6 e2e/regression suites: engine / companion / regression-0.5.2 / 0.5.3 / 0.5.4 / 0.5.5
+npm run test:unit    # core-unit (engine unit tests)
+npm run test:contract # platform-contract (7-primitive / legacy / full modes) + pack-smoke --contract
 npm run test:perf    # performance smoke (300 modules, generous threshold)
-node ci-contract-check.cjs           # bundle declaration + exactly 31 tools + provider-safe names
+node ci-contract-check.cjs           # bundle declaration + full 31 tools + provider-safe names
 node scripts/check-core-boundary.mjs # core must not import @deepseek-ai; cli must not import ../dsh
 node scripts/gen-diagnostics.mjs     # regenerate docs/DIAGNOSTICS.md from source
 node scripts/pack-smoke.mjs --all --strict   # release-package smoke (requires local DSH desktop app)
@@ -442,13 +488,13 @@ node scripts/pack-smoke.mjs --all --strict   # release-package smoke (requires l
 
 | Path | Content |
 | --- | --- |
-| `src/core/` | pure-Node engine (DSH-independent): `engine/*` (ids/validation/compile/render/changes/atomic writes) + `toolset.ts` (31 tool specs) |
-| `src/dsh/` | DSH adapter: real `ToolDefinition`s (output schema + presenters + approval) |
+| `src/core/` | pure-Node engine (DSH-independent): `engine/*` + `toolset.ts` (31 legacy specs) + `primitives.ts` (7 primitive specs) |
+| `src/dsh/` | DSH adapter: real `ToolDefinition`s (output schema + presenters + approval); decides 7-primitive / legacy / full surface |
 | `src/cli/` | CLI (built to `lib/cli/index.js`, `bin: normify`); depends on core only |
 | `lib/` | compiled output (`tsc`; **not in git**, shipped in the npm package) |
-| `skills/normify-gen/` | thin skill `SKILL.md` (≤150 lines) + `references/` (format/validation/recipes/migration/examples) |
-| `tests/` | 6 node test suites + performance smoke |
-| `docs/` | `SPEC.zh-CN.md` (single source of truth) + COMPATIBILITY / MIGRATION / RELEASE-CHECKLIST / DIAGNOSTICS |
+| `skills/normify-gen/` | thin skill `SKILL.md` (≤150 lines) + `references/` (format/validation/recipes/migration/examples/toolset) |
+| `tests/` | 6 e2e/regression suites + core-unit + platform-contract + performance smoke |
+| `docs/` | `SPEC.zh-CN.md` (single source of truth) + COMPATIBILITY / MIGRATION / RELEASE-CHECKLIST / DIAGNOSTICS / MARKET / EVAL / adr |
 | `vendor/` | vendored schemastery + cosmokit (loaded by relative path) |
 
 ## 12. Compatibility & troubleshooting
@@ -457,14 +503,18 @@ node scripts/pack-smoke.mjs --all --strict   # release-package smoke (requires l
 | --- | --- |
 | DSH | `0.2.1-rc.5` (engines `>=0.2.1-rc.1 <0.3.0`; peer: `@deepseek-ai/cordis ^4`) |
 | Support policy | **only the current DSH line (0.2.x)**; stay on 0.5.4 if you still run 0.1.x |
+| Tool surface | 7 primitives by default; `legacyTools:true` adds 31 legacy names; `toolset:"full"` = 31 legacy tools |
 | Node.js | ≥ 18 |
 
 > Full compatibility matrix and evidence: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md); upgrade guide: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 - **Installed but no tools** → the tool list is snapshotted at session start: open a **new session** (or restart DSH).
+- **Legacy tool name reports unknown tool** → 0.7 registers only the 7 primitives by default: set `legacyTools: true`
+  (transition) or use the primitive op (map in §7).
 - **Install fails with `incompatible-version`** → the plugin version is outside the DSH runtime's engines range:
-  upgrade the plugin to 0.5.5+; on DSH 0.1.x stay on 0.5.4.
-- **`evidence/fingerprint-drift`** → the code moved ahead of the structure data: run `normify_sync`, then `normify_module_refresh`.
+  upgrade the plugin to 0.7.0+; on DSH 0.1.x stay on 0.5.4.
+- **`evidence/fingerprint-drift`** → the code moved ahead of the structure data: run `normify_check{op:"drift"}`,
+  then `change{op:"close"}` refreshes (legacy: `normify_module_refresh`).
 - **`structure/leaf-too-coarse`** → not an error: that leaf can be split further (towards single functional units).
 
 ## 13. Security & privacy
@@ -482,7 +532,7 @@ The CLI uses the **same engine** as the DSH tools and does not depend on the DSH
 
 ```bash
 node lib/cli/index.js --help        # commands, options and exit codes
-node lib/cli/index.js tools         # JSON: the 31 tools
+node lib/cli/index.js tools         # JSON: the full 31-tool set (the CLI is not affected by the plugin toolset)
 node lib/cli/index.js verify --project demo   # recompute receipt.sha256 → receipt → artifacts
 
 # Common: locate a project with --project <slug> or --dir <absolute structure dir>
@@ -507,7 +557,7 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # invoke any tool 
 - After installation use `normify <command>` (the `bin` maps to `lib/cli/index.js`); otherwise `node lib/cli/index.js`.
 - JSON output by default; `--quiet` prints one-line JSON. **Exit codes are a stable contract**:
   `0` success; `2` validation/L2 error (including a failed `verify`); `4` argument/usage error; `5` other failure; `6` security refusal.
-- `build --verify-only` / tool `normify_build{verify_only:true}` only verifies the receipt chain, without recompiling.
+- `build --verify-only` (CLI) / `normify_build{op:"verify"}` (primitive) only verifies the receipt chain, without recompiling.
 
 ## 15. Documentation
 
@@ -515,11 +565,15 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # invoke any tool 
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | formal specification v1.0 (data model / source format / artifacts / validation / generator / renderer, single source of truth) |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | DSH × plugin version × verification status (pack-smoke evidence) |
-| [`docs/MIGRATION.md`](docs/MIGRATION.md) | 0.5.4→0.5.5, 0.5.x→0.6.0, 0.7.0 preview |
+| [`docs/MIGRATION.md`](docs/MIGRATION.md) | 0.5.4→0.5.5, 0.5.x→0.6.0, 0.6.x→0.7.0 (default surface switch + legacyTools) |
 | [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md) | per-release checklist (build/test/smoke/checksum/tag) |
 | [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) | diagnostic-code index (generated from source by `scripts/gen-diagnostics.mjs`) |
-| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | thin skill entry (details in `references/`: format/validation/recipes/migration/examples) |
-| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.5.5) |
+| [`docs/MARKET.md`](docs/MARKET.md) | marketplace materials (official market / dshbase / dshhub + user action checklist) |
+| [`docs/EVAL.md`](docs/EVAL.md) / [`docs/EVAL-RESULTS.md`](docs/EVAL-RESULTS.md) | evaluation protocol (n≥3 / isolated profiles / blind review) and retrieval-layer results |
+| [`docs/adr/0011-ui-panel-decision.md`](docs/adr/0011-ui-panel-decision.md) / [`0012-mcp-adapter-decision.md`](docs/adr/0012-mcp-adapter-decision.md) | decision gates: no UI panel / no MCP for 0.7 (CLI-first) |
+| [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | thin skill entry (details in `references/`: format/validation/recipes/migration/examples/toolset) |
+| [`docs/RELEASE-0.7.0.md`](docs/RELEASE-0.7.0.md) | current release notes (7-primitive default surface) |
+| [`CHANGELOG.md`](CHANGELOG.md) | version history (0.1.0 → 0.7.0) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | contributing guide |
 | [`SECURITY.md`](SECURITY.md) | security policy |
 

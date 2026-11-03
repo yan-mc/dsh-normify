@@ -1,15 +1,16 @@
 # 工作流配方（recipes）
 
-> SKILL 的参考文件之一。格式字段见 [format.md](format.md)，诊断修法见 [validation.md](validation.md)，迁移见 [migration.md](migration.md)。
-> CLI 与工具是同一引擎的两张皮：`node lib/cli/index.js <command>` ≈ 对应 `normify_*` 工具。
+> SKILL 的参考文件之一。格式字段见 [format.md](format.md)，诊断修法见 [validation.md](validation.md)，迁移见 [migration.md](migration.md)，
+> 7 原语/旧名映射见 [toolset.md](toolset.md)。
+> CLI 与工具是同一引擎的两张皮：`node lib/cli/index.js <command>` ≈ 对应工具；**CLI 内部是 full 31 工具集，不受插件 toolset 影响**。
 
 ## 0. 先选入口
 
 | 场景 | 用什么 |
 | --- | --- |
-| 在 DSH/agent 会话里 | 优先 `normify_*` 工具（31 个，见 SKILL） |
+| 在 DSH/agent 会话里（0.7 默认） | 7 原语 + `op`（见 [toolset.md](toolset.md)）；旧 prompt 可开 `legacyTools: true` 过渡 |
 | 终端 / CI / 非 DSH agent | CLI：`node lib/cli/index.js <command>`（或安装后的 `normify` bin） |
-| 只想调一个未封装工具 | `normify call <tool-name> --args-json '<json>'` |
+| 只想调一个未封装工具 | `normify call <tool-name> --args-json '<json>'`（可调 7 原语与 31 旧名） |
 
 ## 1. 全量建树（首图为目标仓库）
 
@@ -18,7 +19,7 @@
 node lib/cli/index.js init --project demo --root-id demo --name-zh "演示项目" --name-en "Demo"
 
 # 1) 先建顶层骨架（根 + 3–8 个一级模块；建议批量、原子）
-#    DSH 内：normify_module_batch；CLI 内用 call 传完整参数
+#    DSH 默认面：normify_write{op:"batch"}；CLI 内用 call 传完整参数（内部 full 工具集）
 node lib/cli/index.js call normify_module_batch --args-json '{"project":"demo","items":[...]}'
 
 # 2) 逐层下钻：每层先看清单，再拆
@@ -39,7 +40,7 @@ node lib/cli/index.js render --project demo --out normify.html
 - **叶子判据**：一个文件/一个类/一组内聚函数/一个 UI 组件/一条路由组；还能说清“内部由哪几块组成”就继续拆。
 - **必须继续拆的信号**：source 覆盖 ≥3 文件、单文件行跨度 ≥300、混了 ≥2 个可独立命名的职责、API ≥6 条且能按子功能分组。
 - 单批 `module_batch` ≤200 个模块（原子、失败整批回滚）；总量与深度**不设上限**，鼓励 100–1000+ 模块。
-- 每个模块都写 `source` / `revision` / `fingerprint`；fingerprint 一律 `normify_fingerprint`（CLI：`call normify_fingerprint`）实算。
+- 每个模块都写 `source` / `revision` / `fingerprint`；fingerprint 用 CLI `call normify_fingerprint`（7 原语无对应 op）或 legacy 工具实算，不要手估。
 
 ## 2. 伴随开发（先建图后编程，推荐）
 

@@ -34,3 +34,5 @@ secrets.json
 
 tests/.dsh-deps/
 drift-report.md
+
+eval/results/raw-*.json

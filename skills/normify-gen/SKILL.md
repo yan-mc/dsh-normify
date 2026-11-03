@@ -1,6 +1,6 @@
 ---
 name: normify-gen
-description: Build and maintain a Normify module-tree structure database for one or more code repositories (per-module Markdown with strict YAML frontmatter), then validate, build, verify and render it into a single-file drill-down architecture map. Use when the user asks to map a project's architecture/framework into Normify modules, to update or sync an existing normify-* structure after code changes, to locate which module owns a feature/API or who depends on it, to close a development change with zero-error validation, to migrate/upgrade Normify structure data, or to run the Normify CLI in CI. Covers bilingual (zh/en) modules, leaf-only APIs, containment plus cross-tree dependency edges, zero-tolerance validation, structure SBOM receipts, companion (design-first) development workflow, and incremental subtree regeneration.
+description: Build and maintain a Normify module-tree structure database for one or more code repositories (per-module Markdown with strict YAML frontmatter), then validate, build, verify and render it into a single-file drill-down architecture map. Use when the user asks to map a project's architecture/framework into Normify modules, to update or sync an existing normify-* structure after code changes, to locate which module owns a feature/API or who depends on it, to close a development change with zero-error validation, to migrate/upgrade Normify structure data (including the 0.7 7-primitive / legacyTools transition), or to run the Normify CLI in CI. Covers the 7-primitive tool surface (project/read/write/check/build/render/change with op enums; 31 legacy names via legacyTools), bilingual (zh/en) modules, leaf-only APIs, containment plus cross-tree dependency edges, zero-tolerance validation, structure SBOM receipts, companion (design-first) development workflow, and incremental subtree regeneration.
 ---
 
 # Normify 生成器技能（normify-gen）
@@ -19,53 +19,61 @@ description: Build and maintain a Normify module-tree structure database for one
 
 ```text
 用户要什么？
-├─ 首次映射仓库/多仓库           → 配方 §1（project_init → 骨架 → 逐层 → API/箭头 → renders → validate/build/verify/render）
-├─ 改了代码，要把结构图跟上      → 配方 §3（sync → 按 affected/drift/new_files/layouts 处理 → validate/build/verify）
-├─ 要新增/改造一块功能（还没写码）→ 配方 §2（change_open → brief → check → planned batch → 写码 → refresh → change_close）
-├─ 查模块职责/API 归属/影响面     → list/get/search/deps_find（CLI：list/get/search）
-├─ 关闭一次开发变更              → change_close（0 error 强制；失败保持原状态）
-└─ 旧结构数据/旧版本升级          → references/migration.md + docs/MIGRATION.md
+├─ 首次映射仓库/多仓库           → 配方 §1（project_init → 骨架 → 逐层 → API/箭头 → renders → build/verify/render）
+├─ 改了代码，要把结构图跟上      → 配方 §3（drift → 按 affected/drift/new_files/layouts 处理 → validate/build/verify）
+├─ 要新增/改造一块功能（还没写码）→ 配方 §2（change.open → brief → check → planned batch → 写码 → change.close）
+├─ 查模块职责/API 归属/影响面     → read: list/get/search/deps/brief（CLI：list/get/search/brief）
+├─ 关闭一次开发变更              → change.close（0 error 强制；失败保持原状态）
+└─ 旧结构数据/旧工具名/旧版本升级  → references/migration.md + docs/MIGRATION.md
 ```
 
 ## 2. 铁律（不变量）
 
 1. **只读仓库**：绝不改源码；结构数据只写 `normify-<slug>/`。
 2. **写时校验**：模块一律经写工具落盘（L1 内置），不裸手写 YAML 文件。
-3. **零容忍**：交付/关单以 `validate` **0 error** 为准；warning 不阻断但必须汇报。
+3. **零容忍**：交付/关单以 `check{op:"validate"}` **0 error** 为准；warning 不阻断但必须汇报。
 4. **单方向引用**：只写 `parent` 与出向 `deps`；`children` 字段不存在。
 5. **API 只在叶子**：非叶子（含根）禁止 `apis`；未接箭头的 API 完全合法。
 6. **双语必填**：`name/description` 的 zh 与 en 均非空。
-7. **计划优先**：先建 `state: planned`（`fingerprint: pending`）再实现；源码未落地禁止 `activate`/`change_close`。
+7. **计划优先**：先建 `state: planned`（`fingerprint: pending`）再实现；源码未落地禁止激活/关单。
 8. **规则先行**：`policy.yml` 在设计阶段定好；违规改设计，不删规则。
 9. **增量优于全量**：只重建受影响子树，但每次增量后全项目 0 error。
-10. **证据要求**：每个模块写 `source`/`revision`/`fingerprint`；fingerprint 用 `normify_fingerprint` 实算。
-11. **收尾即闭环**：`change_close` → `verify` 通过才算交付。
+10. **证据要求**：每个模块写 `source`/`revision`/`fingerprint`；指纹用 CLI `call normify_fingerprint`（7 原语无对应 op）或 legacy 工具实算，不要手估。
+11. **收尾即闭环**：`change{op:"close"}` → `verify` 通过才算交付。
 
-## 3. 工具面（31 个 `normify_*`，仍全量保留）
+## 3. 工具面：7 原语（0.7 默认）
 
-| 族 | 工具 |
-| --- | --- |
-| 读取 | `normify_tree_list`、`normify_module_get`、`normify_module_list`、`normify_search`、`normify_deps_find`、`normify_outline` |
-| 写入 | `normify_project_init`、`normify_module_upsert`、`normify_module_delete`、`normify_module_promote` |
-| 演进 | `normify_module_patch`、`normify_module_batch`、`normify_module_move`、`normify_module_refresh` |
-| 渲染数据 | `normify_layout_get`、`normify_layout_upsert`、`normify_layout_delete` |
-| 流水线 | `normify_validate`、`normify_build`、`normify_render`、`normify_fingerprint`、`normify_sync` |
-| 伴随开发 | `normify_brief`、`normify_check`、`normify_change_open`、`normify_change_update`、`normify_change_list`、`normify_change_close`、`normify_policy_get`、`normify_policy_upsert` |
-| 帮助 | `normify_help`（`topic: fields/deps/renders/flow/tools/policy/errors/all/tool:<name>`） |
+| 原语 | op | 用途 |
+| --- | --- | --- |
+| `normify_project` | init / list / status | 初始化（可一步建计划态根）/ 列项目 / 项目概览 |
+| `normify_read` | get / list / search / deps / outline / brief / layout / policy | 只读查询 |
+| `normify_write` | upsert / patch / batch / move / delete / promote / layout_upsert / layout_delete | 事务化写入（L1、原子批、`dry_run`） |
+| `normify_check` | validate / check / drift / policy | L2 校验 / 预检 / git 漂移与增量规划 / 读规则 |
+| `normify_build` | build / verify / sbom | 编译五件产物 + SBOM + 回执链 / 只校验 |
+| `normify_render` | render | 渲染单文件 HTML（`out` 只接受纯文件名） |
+| `normify_change` | open / update / list / close | 变更生命周期；`close` 0 error 强制并激活 planned |
 
+| 配置 | 默认 | 效果 |
+| --- | --- | --- |
+| `toolset: "core"` | ✅ | 只注册 7 原语 |
+| `toolset: "full"` | — | 只注册 31 旧工具（回 0.6 面） |
+| `legacyTools: true` | `false` | 额外注册 31 旧名（过渡 1 个 minor，0.8 移除） |
+
+- 完整 op 参数、31 旧名映射、4 个“无原语等价”的旧工具（fingerprint/refresh/help/policy_upsert）见
+  [references/toolset.md](references/toolset.md)。
 - 所有工具用 `project`（slug）或 `dir`（结构目录绝对路径）定位。
-- 批量（`module_batch`）原子、失败整批回滚，单批 ≤200 个模块；总量/深度不设上限。
-- `build` 产出 **5 件产物 + sidecar**：`tree.json` / `outline.md` / `api-index.json` / `structure-manifest.json`（结构 SBOM）/ `receipt.json`，外加 `receipt.sha256`；回执链可用 `verify` 逐件复算。
+- `build` 产出 **5 件产物 + sidecar**：`tree.json` / `outline.md` / `api-index.json` / `structure-manifest.json`（SBOM）/
+  `receipt.json` + `receipt.sha256`；回执链可用 `build{op:"verify"}` 或 CLI `verify` 逐件复算。
 
-## 4. CLI 速查（跨 agent / CI；与工具同引擎）
+## 4. CLI 速查（跨 agent / CI；内部 full 31 工具集，不受插件 toolset 影响）
 
 ```bash
 node lib/cli/index.js --help          # 命令与选项
-node lib/cli/index.js tools           # JSON：31 个工具
+node lib/cli/index.js tools           # JSON：full 工具集（31）
 node lib/cli/index.js init|status|list|get|search|brief|validate|check|build|verify|render|sync \
   --project <slug> [--dir <path>] [--id <id>] [--repo-root <repo>] [--json] [--quiet]
 node lib/cli/index.js change-open|change-list|change-close --project <slug> --args-json '<json>'
-node lib/cli/index.js call <tool-name> --args-json '<json>'   # 调任意工具
+node lib/cli/index.js call <tool-name> --args-json '<json>'   # 调任意工具（含旧名）
 ```
 
 - 安装后也可直接用 `normify <command>`（`bin` 映射 `lib/cli/index.js`）。
@@ -81,9 +89,12 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # 调任意工具
 
 ## 6. 三个主流程（细节见 recipes）
 
-1. **全量建树**：`project_init` → 骨架 → 逐层下钻（叶子到单一功能单元）→ API/箭头 → 每层 `layout_upsert` → `validate`→`build`→`verify`→`render`。
-2. **伴随开发**：`change_open` → `brief` → `check` → `module_batch(state=planned)` → 写码 → `refresh(activate)` → `validate` → `build` → `change_close`（0 error 强制）。
-3. **增量同步**：`sync` 拿 affected / drift / new_files / layouts_to_review → 改结构 → `validate`→`build`→`verify`。
+1. **全量建树**：`project{op:"init"}` → 骨架 → 逐层下钻（叶子到单一功能单元）→ API/箭头 → 每层 `write{op:"layout_upsert"}`
+   → `check{op:"validate"}` → `build{op:"build"}` → `build{op:"verify"}` → `render{op:"render"}`。
+2. **伴随开发**：`change{op:"open"}` → `read{op:"brief"}` → `check{op:"check"}` → `write{op:"batch"}(state=planned)`
+   → 写码 → `change{op:"close"}`（自动刷新指纹/激活 planned，0 error 强制）。
+3. **增量同步**：`check{op:"drift"}` 拿 affected / drift / new_files / layouts_to_review → 改结构（`write{op:"patch"}`）
+   → `check{op:"validate"}` → `build{op:"build"}` → `build{op:"verify"}`。
 
 → [references/recipes.md](references/recipes.md)
 
@@ -91,12 +102,13 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # 调任意工具
 
 - 先按 `code` 查修法：[references/validation.md](references/validation.md)（高频）→ [docs/DIAGNOSTICS.md](../../docs/DIAGNOSTICS.md)（全量，代码生成）。
 - `policy/<rule-id>` 是动态码，级别跟随规则 `severity`。
-- 修完必须重跑 `validate`；不要静默忽略 error，也不要只改产物不改源数据。
+- 修完必须重跑 `check{op:"validate"}`；不要静默忽略 error，也不要只改产物不改源数据。
 
 ## 8. references 索引（按需加载，不要一次全读）
 
 | 文件 | 何时读 |
 | --- | --- |
+| [references/toolset.md](references/toolset.md) | 7 原语 op 参数 / legacyTools / 31 旧名映射 |
 | [references/format.md](references/format.md) | 写 frontmatter / renders / 变更记录前 |
 | [references/validation.md](references/validation.md) | 遇到诊断、需要修法对照时 |
 | [references/recipes.md](references/recipes.md) | 建树/伴随/同步/渲染可读性/CLI 命令 |

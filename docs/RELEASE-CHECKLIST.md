@@ -55,6 +55,7 @@ node scripts/gen-diagnostics.mjs --check   # DIAGNOSTICS.md 与 src/core 一致
 - [ ] README/README_EN 口径一致：工具数、产物件数、构建命令、CLI 命令与退出码。
 
 ## 5. 发布包验收（pack-smoke）
+- [ ] `node tests/platform-contract.mjs`：默认 7 原语 / `legacyTools` 35 / `toolset=full` 31 三模式 PASS
 
 ```bash
 node scripts/pack-smoke.mjs --all --strict   # 退出码 0；PASS/FAIL/WARN 全记录

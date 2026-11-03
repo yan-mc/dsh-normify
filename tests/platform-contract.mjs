@@ -283,7 +283,7 @@ async function main() {
   const coreTools = captureApply({})
   ok('默认工具面 = 7 原语', coreTools.size === 7 && primitiveNames.every((n) => coreTools.has(n)), '实际 ' + coreTools.size)
   const legacyTools = captureApply({ legacyTools: true })
-  ok('legacyTools 模式 = 7 原语 + 31 旧名', legacyTools.size === 38 && primitiveNames.every((n) => legacyTools.has(n)) && legacyTools.has('normify_module_upsert'), '实际 ' + legacyTools.size)
+  ok('legacyTools 模式 = 35（7 原语 + 28 不冲突旧名）', legacyTools.size === 35 && primitiveNames.every((n) => legacyTools.has(n)) && legacyTools.has('normify_module_upsert'), '实际 ' + legacyTools.size)
   const fullTools = captureApply({ toolset: 'full' })
   ok('toolset=full 模式 = 31 旧工具', fullTools.size === 31 && fullTools.has('normify_module_upsert') && !fullTools.has('normify_read'), '实际 ' + fullTools.size)
 }

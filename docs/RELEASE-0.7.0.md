@@ -21,7 +21,7 @@
 | `normify_change` | open / update / list / close |
 
 - 默认注册 **7** 个工具（schema 体积较 31 工具面显著下降，工具选择歧义减少）。
-- `config.legacyTools: true` → 7 + 31 = **38**（旧名保留 1 个 minor）；`config.toolset: "full"` → 31（完全回旧面）。
+- `config.legacyTools: true` → 7 + 28 = **35**（check/build/render 同名去重；旧名保留 1 个 minor）；`config.toolset: "full"` → 31（完全回旧面）。
 - destroy 语义（含 `normify_write` 的 delete/layout_delete）继续走 `tools/pre-execute ask` 一次性审批。
 - 每个工具仍有真实 `output.schema` / `presentationMeta` / `presentCall` / `presentResult`。
 
@@ -30,6 +30,13 @@
 - `eval/harness.mjs`：grep 基线 / tree.json 基线 / normify CLI 三 arm × ≥20 任务 × n=3，独立进程运行；指标 = top-k 正确率、耗时、输出字节（token 代理）、调用次数。
 - 结果与局限见 `docs/EVAL-RESULTS.md`；`docs/EVAL.md` 给出**在 DSH 内做 LLM A/B** 的 n≥3 / 独立 profile / 预注册指标 / 盲评协议（本次不宣称端到端 agent 收益）。
 - 旧 A/B（42/42、87/88）表述改为"n=1 可行性实验"（见 docs/EVAL.md 方法学说明）。
+| arm | hit@3 | 延迟 | 输出 token 代理 | 本地扫描 | 上下文数据（估） | CLI 调用 |
+|---|---|---|---|---|---|---|
+| A grep | 100% | 122 ms | 5.15 | 186 KB | 0 | 0 |
+| B tree.json | 100% | 99 ms | 5.15 | 188 KB | 188 KB ≈ 47k token | 0 |
+| C normify CLI | 100% | 409 ms | **229** | 0 | 0 | 1 |
+
+> 读法：B 臂"有产物无工具"必须把整份 tree.json 放进上下文（≈47k token/任务）；C 臂模型可见仅 ≈229 token/任务且单次调用（延迟含 ~200ms CLI 进程启动，DSH 工具调用无此开销）。30 任务 × 3 arm × n=3 × repeat=2 = 540 次独立进程，26.7s 可复跑；跨轮 hit@3/输出完全一致（relSpread=0）。
 
 ### 3) 市场分发材料
 
@@ -49,10 +56,10 @@
 | build / typecheck | PASS（0 error） |
 | 6 套 e2e/回归 + core-unit 79 + platform-contract 25 + perf | PASS |
 | `pack-smoke --all --strict` | **PASS 43 / FAIL 0 / WARN 0**（static 15 / contract 18 / boot 8） |
-| 工具面 | 默认 7 原语；`legacyTools` 38；`toolset=full` 31（platform-contract 25/25 覆盖三种模式） |
+| 工具面 | 默认 7 原语；`legacyTools` 35（7 原语 + 28 不冲突旧名）；`toolset=full` 31（platform-contract 25/25 覆盖三种模式） |
 | static | engines 门禁、bundle patch 自洽、files 覆盖、版本单源 0.7.0、lib↔src 对齐、full 规格 31 |
 | contract | 真实 ToolRuntime（full 面 31 工具）schema/presenters/skill 全过 |
-| boot | `pnpm pack` 266,769 B → 临时 DSH_HOME profile → `dsh plugin add` → dump-config 含插件层 → headless mount 无错误 |
+| boot | `pnpm pack` 272,967 B → 临时 DSH_HOME profile → `dsh plugin add` → dump-config 含插件层 → headless mount 无错误 |
 | 评测 | 见 `docs/EVAL-RESULTS.md`（本次为检索层评测，非 LLM A/B） |
 
 ## 安装与升级
@@ -66,8 +73,8 @@
 | 项 | 值 |
 |---|---|
 | 附件 | `dsh-external-dsh-normify-0.7.0.tgz` |
-| 体积 | 266,769 B |
-| SHA-256 | `4609994ca9e1a5edd152b8ed1799bd13c66170ef0680eecaee8237d8ea0ddf61` |
+| 体积 | 272,967 B |
+| SHA-256 | `8b196abdbf2d444a2f205a5d2e7b2dd3b40426a24b5507777e029502e1bef1a8` |
 
 ## 已知限制 / 1.0 预告
 

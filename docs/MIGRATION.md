@@ -1,7 +1,7 @@
 # 迁移指南（MIGRATION）
 
 > 目标读者：从旧版本升级 Normify 的用户 / 维护者。兼容矩阵见 [COMPATIBILITY.md](COMPATIBILITY.md)。
-> 当前主线：`0.6.0`（refactor/v1，开发中）；已发布最新：`0.5.5`。
+> 当前主线：`0.7.0`（refactor/v1，待打 tag）；已发布最新：`0.6.0`。
 
 ## 0. 一句话结论
 
@@ -9,12 +9,12 @@
 | --- | --- | --- |
 | `0.5.4 → 0.5.5` | **不需要** | 直接升级插件；行为变化见 §2 |
 | `0.5.x → 0.6.0` | **不需要**（数据格式 v1 不变） | `npm run build`（从源码用时）→ 重装 → 新开 DSH 会话；CLI 为新增能力 |
-| `0.4.x / 0.5.x → 0.7.0`（未来） | 需要（v2 迁移，届时提供 `normify migrate`） | 等 0.7.0 发布说明；在此之前项目继续用 v1 |
+| `0.6.x → 0.7.0` | **不需要**（数据格式 v1 不变） | 默认工具面从 31 旧名切到 7 原语；旧 prompt/技能可开 `legacyTools:true` 过渡，见 §4 |
 | `0.1.x` 环境 | — | **不支持**；请留在插件 `0.5.4` |
 
 ## 1. 数据格式兼容
 
-- 结构数据 `schema_version: 1`：0.4.x 起的数据 0.5.x / 0.6.0 **可直接读写，无需迁移**。
+- 结构数据 `schema_version: 1`：0.4.x 起的数据在 0.5.x / 0.6.0 / 0.7.0 **可直接读写，无需迁移**。
 - 升级后先跑一次全量校验（带仓库证据）：
 
 ```bash
@@ -78,12 +78,49 @@ npm test                 # 6 套测试全绿
 - 旧代码若直接 `import '@dsh-external/dsh-normify'` 并依赖其导出：0.6.0 的包入口指向 `lib/dsh/index.js`，公开导出面以 `docs/SPEC.zh-CN.md` 与包 `exports` 为准；引擎级 API 请改用 `@dsh-external/dsh-normify/core`。
 - 插件在 DSH 侧的安装契约不变（`dsh.bundle.patch` + `cordis.patch.yml`）。
 
-## 4. `0.7.0` 预告（规划中）
+## 4. `0.6.x → 0.7.0`（默认工具面切换，**无数据迁移**）
 
-- 工具面收敛为 **7 个原语**：`project / read / write / check / build / render / change`；
-  31 个旧工具名保留在 `legacyTools` 开关后。
-- 数据模型演进到 v2，配套 `normify migrate`（逐版本步骤、幂等、可中断）与 v1 只读兼容。
-- 0.7.0 发布前**不需要**任何提前迁移；当前项目照常使用 v1。届时以发布说明与 `MIGRATION.md` 更新为准。
+0.7.0 是**一次有过渡的工具面 breaking**：默认不再注册 31 个旧工具，只注册 **7 个原语**（按 `op` 分派）。
+结构数据格式 v1、五件产物 + SBOM + `verify`、CLI 命令与退出码**均不变**。
+
+### 4.1 工具面三档（插件 config）
+
+| 配置 | 注册的工具 | 适用 |
+| --- | --- | --- |
+| `toolset: "core"`（默认） | 7 原语：`normify_project` / `read` / `write` / `check` / `build` / `render` / `change` | 新会话、新技能、新 prompt |
+| `toolset: "core"` + `legacyTools: true` | 7 原语 + 28 不冲突旧名（过渡 1 个 minor） | 已有 prompt/技能仍引用旧名 |
+| `toolset: "full"` | 仅 31 旧工具（完全回 0.6 面） | 临时回滚/兼容 |
+
+配置在插件配置里设置（插件管理器配置 / profile 的 bundle config / `cordis.patch.yml` 的 `config`），例如：
+
+```yaml
+- insert:
+    - id: dsh-normify
+      name: '@dsh-external/dsh-normify'
+      config: { toolset: core, legacyTools: true }   # 过渡期
+```
+
+### 4.2 升级动作
+
+1. 升级插件 → **新开 DSH 会话**（工具列表在会话启动时快照）。
+2. 先跑校验确认结构数据无异常（CLI 不受工具面影响，仍是 full 31）：
+
+```bash
+node lib/cli/index.js validate --project <slug> --repo-root <repo>   # 0 error
+node lib/cli/index.js build --project <slug> && node lib/cli/index.js verify --project <slug>
+```
+
+3. 把 prompt/技能里的旧工具名换成 7 原语 `op`（映射表见 [README §7](../README.md#7-工具面7-原语legacytools-过渡) 与
+   `skills/normify-gen/references/toolset.md`）；短期无法改就开 `legacyTools: true`。
+4. 0.8.0 将移除 legacy 面：在此之前完成迁移（无数据迁移，只是调用面）。
+
+### 4.3 注意
+
+- 有 4 个旧工具**没有原语等价**：`normify_fingerprint`、`normify_module_refresh`、`normify_help`、`normify_policy_upsert`。
+  过渡期开 `legacyTools:true`，或走 CLI（`normify call <tool>`）；日常流程中 `change{op:"close"}` 会自动刷新指纹并激活 planned。
+- `normify_check` / `normify_build` / `normify_render` 三个名字在 0.7 是**原语语义**（需 `op`）；`legacyTools` 同时注册旧名时，
+  过渡期请直接用原语 `op`，不要依赖同名旧语义。
+- 旧 A/B 实验表述改为“n=1 可行性实验”，评测方法学见 [EVAL.md](EVAL.md)。
 
 ## 5. 版本与 DSH 跟进政策
 

@@ -5,9 +5,9 @@
 
 ## 1. 数据格式（最重要）
 
-- 结构数据的 schema_version 目前为 **1**，从 0.4.x 到 0.6.0 **无需迁移**：0.5.x 建的项目可直接被 0.6.0 读取/写入。
-- `normify_validate` 仍是唯一门禁；升级后先跑一次 `validate`（带 `--repo-root`）确认 0 error，再继续开发。
-- 删除型变更在 0.5.5 起由引擎自动维护 `delete_snapshot`；0.5.4 及以前创建的删除型变更可能缺快照，按报错提示补一次 `normify_change_update` 即可。
+- 结构数据的 schema_version 目前为 **1**，从 0.4.x 到 0.7.0 **无需迁移**：0.5.x 建的项目可直接被 0.6/0.7 读取/写入。
+- `check{op:"validate"}`（CLI：`normify validate`）仍是唯一门禁；升级后先跑一次（带 `--repo-root`）确认 0 error，再继续开发。
+- 删除型变更在 0.5.5 起由引擎自动维护 `delete_snapshot`；0.5.4 及以前创建的删除型变更可能缺快照，按报错提示用 `change{op:"update"}`（CLI：`normify call normify_change_update`）补一次即可。
 
 ## 2. 0.5.4 → 0.5.5（P0 止血）
 
@@ -38,12 +38,15 @@
 
 **升级动作**：`npm install` → `npm run build`（从源码用时）→ 重装插件包 → **新开 DSH 会话**（工具列表会话启动时快照）。
 
-## 4. 0.7.0 预告（规划中，不承诺日期）
+## 4. 0.6.x → 0.7.0（默认工具面切换，**无数据迁移**）
 
-- 工具面收敛为 **7 个原语**：`project / read / write / check / build / render / change`；其余能力下沉为 CLI 子命令。
-- 31 个旧工具名保留在 `legacyTools` 开关后（默认行为届时由 0.7.0 发布说明定义），不会突然消失。
-- 数据模型演进（v2）会配套 `normify migrate` 迁移命令与逐版本步骤；v1 项目保持只读兼容。
-- 0.7.0 前**不需要**任何提前迁移；当前项目照常写 v1。
+- 默认只注册 **7 原语**（`project / read / write / check / build / render / change`，按 `op` 分派）；
+  `legacyTools: true` 额外注册 31 旧名（过渡 1 个 minor，0.8 移除）；`toolset: "full"` 完全回 0.6 面。
+- 结构数据 v1、五件产物 + SBOM + `verify`、CLI 命令与退出码**不变**；CLI 内部恒为 full 31 工具集。
+- 迁移动作：把 prompt/技能里的旧工具名改成原语 op（映射见 [toolset.md](toolset.md)）；短期可开 `legacyTools`。
+- 4 个旧工具**无原语等价**：`normify_fingerprint` / `normify_module_refresh` / `normify_help` / `normify_policy_upsert`；
+  过渡期用 `legacyTools` 或 CLI `call`（`change{op:"close"}` 会自动刷新指纹/激活 planned）。
+- 旧 A/B 表述改为“n=1 可行性实验”，方法学见 [docs/EVAL.md](../../../docs/EVAL.md)。
 
 ## 5. 兼容性口径
 

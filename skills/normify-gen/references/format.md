@@ -5,7 +5,7 @@
 
 ## 1. 结构数据目录
 
-一个项目 = 一个 `normify-<slug>/` 目录（slug 由 `normify_project_init` 或 `change_open` 自动创建）：
+一个项目 = 一个 `normify-<slug>/` 目录（slug 由 `project{op:"init"}` 或 `change{op:"open"}` 自动创建）：
 
 ```text
 normify-<slug>/
@@ -35,7 +35,7 @@ normify-<slug>/
 | `source` | ✅ | `[{path, line?, end_line?}]`：仓库相对 POSIX 路径（禁绝对/`..`/反斜杠）；根模块允许 `[]` |
 | `revision` | ✅ | 生成时仓库 40 位 git SHA |
 | `updated_at` | ✅ | ISO 8601，如 `2026-11-03T12:00:00Z` |
-| `fingerprint` | ✅ | `source` 的确定性 SHA-256（hex）；**用 `normify_fingerprint` 计算**，不要手估 |
+| `fingerprint` | ✅ | `source` 的确定性 SHA-256（hex）；**用 `normify_fingerprint` 实算**（7 原语无对应 op：CLI `call normify_fingerprint` 或 legacyTools），不要手估 |
 | `state` | 可选 | `active`（默认）/ `planned`（计划态，需 `fingerprint: pending`）/ `deprecated` |
 | `replacement` | 可选 | 仅 deprecated；指向替代模块 id |
 | `tags` | 可选 | 字符串数组，≤12 个，用于检索 |
@@ -53,7 +53,7 @@ normify-<slug>/
 - `deps[].kind` ∈ `call | event | dataflow | reference`。
 - `deps[].to` 为目标模块 id（可跨树）；`from_api` 只能是**本模块** API 键（仅叶子）；`to_api` 只能是**目标模块自身** API 键。
 - `deps[].label` 各 ≤ 30 字符。
-- 两端都声明了 API 的箭头建议补 `from_api` / `to_api`：否则 `normify_validate` 给聚合 warning `dep/unanchored`（箭头只能落在框边，钉不到 API 行）。
+- 两端都声明了 API 的箭头建议补 `from_api` / `to_api`：否则 `check{op:"validate"}` 给聚合 warning `dep/unanchored`（箭头只能落在框边，钉不到 API 行）。
 
 ## 3. YAML 子集（手写 frontmatter 时必须遵守）
 
@@ -73,9 +73,9 @@ normify-<slug>/
 | `reading` | `{zh,en}` 一句话阅读导语 |
 | `edge_hints` | `[{from,to,kind?,lane?,style?,bundle?,priority?}]`：车道 0..9 / `orthogonal`\|`curve` |
 
-用 `normify_layout_upsert` / `normify_layout_delete` 维护；容器缺渲染数据记 warning `layout/missing`。可读性配方见 [recipes.md](recipes.md)。
+用 `write{op:"layout_upsert"}` / `write{op:"layout_delete"}` 维护；容器缺渲染数据记 warning `layout/missing`。可读性配方见 [recipes.md](recipes.md)。
 
-## 5. 编译产物（`normify_build` 产出：**五件产物 + 回执自证链**）
+## 5. 编译产物（`build{op:"build"}` 产出：**五件产物 + 回执自证链**）
 
 | 产物 | 内容 |
 | --- | --- |
@@ -86,12 +86,12 @@ normify-<slug>/
 | `receipt.json` | 各产物 SHA-256 回执（**不含自身**） |
 | `receipt.sha256` | `receipt.json` 自身校验和 sidecar |
 
-- L3 约束：`validate` 有 error 时**不产出**任何产物；产出后可用 CLI `verify` 复算整个回执链。
-- `normify.html`（`normify_render`）是单文件交互图，零外部依赖。
+- L3 约束：`check{op:"validate"}` 有 error 时**不产出**任何产物；产出后可用 CLI `verify` 复算整个回执链。
+- `normify.html`（`render{op:"render"}`）是单文件交互图，零外部依赖。
 
 ## 6. 变更日志（`changes/<id>.json`）
 
-- 由 `normify_change_open/update/close` 维护；`id` 默认 `YYYY-MM-DD-<title.en slug>`。
+- 由 `change{op:"open"/"update"/"close"}` 维护；`id` 默认 `YYYY-MM-DD-<title.en slug>`。
 - 结构：`schema_version / id / title{zh,en} / status / intent / modules{create,modify,delete} / delete_snapshot / acceptance[] / note / revision / created_at / updated_at / closed_at`。
 - `delete_snapshot` 由引擎在删除时自动回填（不要手写）；关闭成功即 `status: verified` 且写 `revision.after`。
 

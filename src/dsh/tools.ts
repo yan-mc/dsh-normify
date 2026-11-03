@@ -20,7 +20,11 @@ function specsFor(env: ToolEnv): NormifyToolSpec[] {
     if (env.toolset === 'full')
         return createNormifyTools(env);
     const primitives = createNormifyPrimitiveTools(env);
-    return env.legacyTools === true ? [...primitives, ...createNormifyTools(env)] : primitives;
+    if (env.legacyTools !== true)
+        return primitives;
+    // 7 原语里 check/build/render 与旧 31 名同名：旧面只补不冲突的 28 个，最终 35 个唯一工具。
+    const primitiveNames = new Set(primitives.map(spec => spec.name));
+    return [...primitives, ...createNormifyTools(env).filter(spec => !primitiveNames.has(spec.name))];
 }
 
 /** 工具名 → 行为（read/write/destroy/idempotent），供审批/护栏使用。 */

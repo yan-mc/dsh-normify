@@ -87,7 +87,8 @@
     "cli": "node lib/cli/index.js",
     "test:unit": "node tests/core-unit.mjs",
     "test:drift": "node scripts/dsh-contract-diff.mjs",
-    "test:all": "npm run typecheck && npm test && npm run test:unit && npm run test:perf && npm run test:contract"
+    "test:all": "npm run typecheck && npm test && npm run test:unit && npm run test:perf && npm run test:contract && npm run test:eval",
+    "test:eval": "node eval/harness.mjs"
   },
   "bin": {
     "normify": "./lib/cli/index.js"
