@@ -582,7 +582,6 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # 直接调用任�
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 薄技能入口（`references/` 放格式/校验/配方/迁移/示例/工具面） |
 | [`docs/RELEASE-0.7.0.md`](docs/RELEASE-0.7.0.md) | 当前版本发布说明（7 原语默认面） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.7.0） |
-| [`docs/VIDEO-SCRIPT.zh-CN.md`](docs/VIDEO-SCRIPT.zh-CN.md) | **视频文字稿**（10 分钟完整版 + 60 秒速览 + 数字备忘卡 + 录制清单） |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与贡献 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略 |
 
@@ -593,3 +592,4 @@ node lib/cli/index.js call <tool-name> --args-json '<json>'   # 直接调用任�
 ---
 
 <p align="center"><sub>Normify —— 让架构图跟着代码一起生长。</sub></p>
+
